@@ -8,6 +8,11 @@ import {
   Cell
 } from 'recharts';
 
+const ADMIN_CREDENTIALS = {
+  username: 'rhodes',
+  password: '102410'
+};
+
 const TRANSLATIONS = {
   EN: {
     auditTitle: "214 Audit Hub",
@@ -46,7 +51,13 @@ const TRANSLATIONS = {
     allFwd: "All Forwarders",
     addNewFwd: "+ Add New FWD",
     remarksLabel: "Supplementary Explanation",
-    remarksPlaceholder: "Enter any additional observations or explanations here..."
+    remarksPlaceholder: "Enter any additional observations or explanations here...",
+    adminLogin: "Admin Access",
+    username: "Username",
+    password: "Password",
+    loginBtn: "Authorize",
+    loginError: "Invalid Credentials",
+    logout: "Sign Out"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -85,7 +96,13 @@ const TRANSLATIONS = {
     allFwd: "全部货代",
     addNewFwd: "+ 新增货代",
     remarksLabel: "补充说明",
-    remarksPlaceholder: "在此输入任何特别说明或观察结果..."
+    remarksPlaceholder: "在此输入任何特别说明或观察结果...",
+    adminLogin: "管理员登录",
+    username: "用户名",
+    password: "密码",
+    loginBtn: "授权进入",
+    loginError: "用户名或密码错误",
+    logout: "退出登录"
   }
 };
 
@@ -120,6 +137,11 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
+  // Login State
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('corsair_admin_auth') === 'true');
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState(false);
+
   // 审计中心数据
   const [logisticsRecords, setLogisticsRecords] = useState<LogisticsRecord[]>([]);
   const [auditFilterFwd, setAuditFilterFwd] = useState<string>('ALL');
@@ -242,6 +264,23 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginForm.username === ADMIN_CREDENTIALS.username && loginForm.password === ADMIN_CREDENTIALS.password) {
+      setIsLoggedIn(true);
+      setLoginError(false);
+      localStorage.setItem('corsair_admin_auth', 'true');
+    } else {
+      setLoginError(true);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    localStorage.removeItem('corsair_admin_auth');
+    setActiveTab('ASSESSMENT');
+  };
+
   const handleGenerateAggregatedEmail = async () => {
     if (auditFilterFwd === 'ALL') {
       alert("请先筛选具体货代再生成催办邮件");
@@ -311,7 +350,7 @@ const App: React.FC = () => {
               <i className="fas fa-database"></i>
             </div>
             <div>
-              <h1 className="font-black text-xl uppercase italic leading-none">{t.auditTitle}</h1>
+              <h1 className="font-black text-xl uppercase italic leading-none tracking-tight">{t.auditTitle}</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -326,14 +365,19 @@ const App: React.FC = () => {
                <i className="fas fa-star mr-2"></i> {t.assessmentTitle}
              </button>
              <button onClick={() => setActiveTab('AUDIT')} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${activeTab === 'AUDIT' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-indigo-400'}`}>
-               <i className="fas fa-file-csv mr-2"></i> {t.auditTitle}
+               <i className="fas fa-shield-halved mr-2"></i> {t.auditTitle}
              </button>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
              <button onClick={() => setLang(lang === 'EN' ? 'CN' : 'EN')} className="px-4 py-2 border border-slate-200 rounded-lg text-[10px] font-black uppercase hover:bg-white transition-all">
                 {t.switchLang}
              </button>
+             {isLoggedIn && (
+               <button onClick={handleLogout} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-400 rounded-lg text-[10px] font-black uppercase hover:text-rose-600 transition-all">
+                  <i className="fas fa-sign-out-alt mr-2"></i> {t.logout}
+               </button>
+             )}
              {activeTab === 'ASSESSMENT' && (
                <button onClick={() => { 
                  setIsAddingNewFwd(false);
@@ -502,95 +546,141 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'AUDIT' && (
-          <div className="animate-in fade-in duration-500 space-y-8">
-            {logisticsRecords.length === 0 ? (
-               <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
-                  <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
-                  <h2 className="text-2xl font-black text-slate-400 uppercase italic">Audit Workspace</h2>
-                  <p className="text-slate-400 mt-4 max-w-md mx-auto">Upload the 214 master file. The system will filter out shipments with an Actual Delivery Date (ADD).</p>
-                  <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg">
-                     <i className="fas fa-cloud-upload-alt"></i> {t.importData}
-                     <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
-                  </label>
-               </div>
+          <div className="animate-in fade-in duration-500">
+            {!isLoggedIn ? (
+              <div className="max-w-md mx-auto py-20 animate-in zoom-in duration-500">
+                <div className="bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-slate-200">
+                  <div className="bg-indigo-600 px-10 py-12 text-center text-white">
+                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-2xl">
+                      <i className="fas fa-lock"></i>
+                    </div>
+                    <h2 className="text-2xl font-black uppercase tracking-tight italic">{t.adminLogin}</h2>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mt-2 italic">Access 214 Data Processing Hub</p>
+                  </div>
+                  <form onSubmit={handleLogin} className="p-10 space-y-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.username}</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={loginForm.username}
+                        onChange={e => setLoginForm({...loginForm, username: e.target.value})}
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.password}</label>
+                      <input 
+                        type="password" 
+                        required
+                        value={loginForm.password}
+                        onChange={e => setLoginForm({...loginForm, password: e.target.value})}
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
+                      />
+                    </div>
+                    {loginError && (
+                      <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest text-center animate-bounce">
+                        <i className="fas fa-exclamation-circle mr-1"></i> {t.loginError}
+                      </div>
+                    )}
+                    <button type="submit" className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">
+                      {t.loginBtn}
+                    </button>
+                  </form>
+                </div>
+              </div>
             ) : (
-               <div className="space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
-                      <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.totalShipments}</div>
-                      <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{pastDueRecords.length}</div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm col-span-2 flex items-center px-8">
-                       <div className="flex flex-col flex-1">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.filterFwd}</label>
-                          <select 
-                            value={auditFilterFwd} 
-                            onChange={e => setAuditFilterFwd(e.target.value)}
-                            className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
-                          >
-                            <option value="ALL">{t.allFwd}</option>
-                            {auditFwdOptions.map(f => <option key={f} value={f}>{f}</option>)}
-                          </select>
-                       </div>
-                       {auditFilterFwd !== 'ALL' && (
-                         <button 
-                            onClick={handleGenerateAggregatedEmail}
-                            disabled={isEmailLoading}
-                            className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
-                         >
-                           {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>}
-                           {t.genAggregatedEmail}
-                         </button>
-                       )}
-                    </div>
-
-                    <div className="flex items-center justify-end">
-                      <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
-                        <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
-                      </button>
-                    </div>
+              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {logisticsRecords.length === 0 ? (
+                  <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
+                      <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
+                      <h2 className="text-2xl font-black text-slate-400 uppercase italic">Audit Workspace</h2>
+                      <p className="text-slate-400 mt-4 max-w-md mx-auto">Logged in as Administrator. Upload the 214 master file (EDI/CSV) for processing.</p>
+                      <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg">
+                        <i className="fas fa-cloud-upload-alt"></i> {t.importData}
+                        <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
+                      </label>
                   </div>
+                ) : (
+                  <div className="space-y-8">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
+                          <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.totalShipments}</div>
+                          <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{pastDueRecords.length}</div>
+                        </div>
+                        
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm col-span-2 flex items-center px-8">
+                          <div className="flex flex-col flex-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.filterFwd}</label>
+                              <select 
+                                value={auditFilterFwd} 
+                                onChange={e => setAuditFilterFwd(e.target.value)}
+                                className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
+                              >
+                                <option value="ALL">{t.allFwd}</option>
+                                {auditFwdOptions.map(f => <option key={f} value={f}>{f}</option>)}
+                              </select>
+                          </div>
+                          {auditFilterFwd !== 'ALL' && (
+                            <button 
+                                onClick={handleGenerateAggregatedEmail}
+                                disabled={isEmailLoading}
+                                className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
+                            >
+                              {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>}
+                              {t.genAggregatedEmail}
+                            </button>
+                          )}
+                        </div>
 
-                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                      <h2 className="text-xl font-black uppercase italic tracking-tight">
-                        {auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}
-                      </h2>
-                      <span className="text-[10px] font-black text-slate-400 uppercase">Showing {displayAuditRecords.length} Shipments</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left">
-                        <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
-                          <tr>
-                            <th className="px-8 py-6">FWD</th>
-                            <th className="px-6 py-6">HAWB</th>
-                            <th className="px-6 py-6">Origin</th>
-                            <th className="px-6 py-6">Dest</th>
-                            <th className="px-6 py-6 text-center">EDD (AY)</th>
-                            <th className="px-6 py-6 text-center">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {displayAuditRecords.slice(0, 200).map((r, idx) => (
-                            <tr key={idx} className="hover:bg-rose-50/10 transition-colors bg-rose-50/5">
-                              <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
-                              <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
-                              <td className="px-6 py-6 text-xs text-slate-500">{r.origin}</td>
-                              <td className="px-6 py-6 text-xs text-slate-500">{r.destination}</td>
-                              <td className="px-6 py-6 text-center text-xs font-bold text-rose-500">{r.estimatedDeliveryDate}</td>
-                              <td className="px-6 py-6 text-center">
-                                <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase bg-rose-100 text-rose-600 animate-pulse">
-                                  Past Due
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                        <div className="flex items-center justify-end">
+                          <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
+                            <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                          <h2 className="text-xl font-black uppercase italic tracking-tight">
+                            {auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}
+                          </h2>
+                          <span className="text-[10px] font-black text-slate-400 uppercase">Showing {displayAuditRecords.length} Shipments</span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                              <tr>
+                                <th className="px-8 py-6">FWD</th>
+                                <th className="px-6 py-6">HAWB</th>
+                                <th className="px-6 py-6">Origin</th>
+                                <th className="px-6 py-6">Dest</th>
+                                <th className="px-6 py-6 text-center">EDD (AY)</th>
+                                <th className="px-6 py-6 text-center">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {displayAuditRecords.slice(0, 200).map((r, idx) => (
+                                <tr key={idx} className="hover:bg-rose-50/10 transition-colors bg-rose-50/5">
+                                  <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
+                                  <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
+                                  <td className="px-6 py-6 text-xs text-slate-500">{r.origin}</td>
+                                  <td className="px-6 py-6 text-xs text-slate-500">{r.destination}</td>
+                                  <td className="px-6 py-6 text-center text-xs font-bold text-rose-500">{r.estimatedDeliveryDate}</td>
+                                  <td className="px-6 py-6 text-center">
+                                    <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase bg-rose-100 text-rose-600 animate-pulse">
+                                      Past Due
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                   </div>
-               </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -733,7 +823,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v8.0 // FTP Upload Status: Managed
+        Corsair Data Intelligence v9.0 // Backstage Access Enabled
       </footer>
     </div>
   );
