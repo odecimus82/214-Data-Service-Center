@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { LogisticsRecord, ForwarderSummary, ForwarderAssessment, ServiceStandard } from './types';
+import { LogisticsRecord, ForwarderAssessment, ServiceStandard } from './types';
 import { parseLogisticsCSV } from './utils/csvParser';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -13,17 +13,9 @@ const TRANSLATIONS = {
     assessmentTitle: "Service Scorecard",
     importData: "Upload 214 CSV",
     newAssessment: "Add Score",
-    totalSyncs: "Sync Records",
-    overdueHawbs: "Overdue",
-    completed: "Archived",
+    editAssessment: "Edit Score",
     partners: "Forwarders",
-    distribution: "Overdue Analysis",
-    systemInsight: "AI Performance Insight",
-    trends: "Historical Performance",
     ranking: "Ranking",
-    evolution: "Evolution",
-    noDataThisMonth: "No records found for this period.",
-    matrix: "Performance Matrix",
     standards: "Service Standards",
     actions: "Improvement Plan (Score < 7)",
     actionNeeded: "Action Needed",
@@ -36,7 +28,8 @@ const TRANSLATIONS = {
     evaluation: "Overall",
     scoreLabel: "Auto Score",
     finalize: "Save to Cloud",
-    deleteConfirm: "Confirm deletion?",
+    updateRecord: "Update Record",
+    deleteConfirm: "Confirm deletion? This will sync to all devices.",
     selectFwd: "Select Forwarder...",
     switchLang: "中文",
     filterByMonth: "Timeline Filter:",
@@ -51,17 +44,9 @@ const TRANSLATIONS = {
     assessmentTitle: "服务评估看板",
     importData: "上传 214 数据",
     newAssessment: "录入新评分",
-    totalSyncs: "同步记录总数",
-    overdueHawbs: "逾期单量",
-    completed: "已完成归档",
+    editAssessment: "修改评分内容",
     partners: "货代总数",
-    distribution: "逾期分布图",
-    systemInsight: "系统智能建议",
-    trends: "服务趋势分析",
     ranking: "绩效排名",
-    evolution: "演变趋势",
-    noDataThisMonth: "该时段暂无评估数据",
-    matrix: "服务表现矩阵",
     standards: "服务标准手册",
     actions: "改善行动项 (评分 < 7)",
     actionNeeded: "项待改善",
@@ -74,7 +59,8 @@ const TRANSLATIONS = {
     evaluation: "综合评价",
     scoreLabel: "系统总分",
     finalize: "保存至云端",
-    deleteConfirm: "确定要从云端删除此记录吗？",
+    updateRecord: "更新云端记录",
+    deleteConfirm: "确定要从云端删除此记录吗？所有设备将同步。 ",
     selectFwd: "请选择货代...",
     switchLang: "English",
     filterByMonth: "月份筛选：",
@@ -92,37 +78,46 @@ const SERVICE_STANDARDS: ServiceStandard[] = [
   { category: 'Customer Service', item: 'Response', detail: '2h for urgent, 4h for standard', goal: 'SLA Compliance' }
 ];
 
-const FORWARDER_LIST = ["THI", "AGS", "Dimerco", "DP World", "JAS Forwarding", "Kuehne+Nagel", "Pegasus", "SGS", "Schneider", "Speedmark"];
-
-const INITIAL_ASSESSMENTS: ForwarderAssessment[] = [
-  { month: '2025-12', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 9.5 },
-  { month: '2025-12', company: 'DP World', frequency: 'Low', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '>4 hours', evaluation: 'Fair', score: 4.5 },
-  { month: '2025-11', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
-  { month: '2025-11', company: 'Schneider', frequency: 'Medium', completeness: 'Good', formatStandards: 'Fair', emailResponse: '≤4 hours', evaluation: 'Fair', score: 6.5 },
+// 更新后的货代名单
+const FORWARDER_LIST = [
+  "THI", "AGS", "Dimerco", "DP World", "JAS Forwarding", 
+  "Kuehne+Nagel", "Pegasus Forwarding", "Scan Global Logistics", 
+  "Schneider", "Speedmark"
 ];
 
-const COLORS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+// 根据提供的图片完整录入的 2025-11 数据
+const INITIAL_ASSESSMENTS: ForwarderAssessment[] = [
+  { month: '2025-11', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
+  { month: '2025-11', company: 'AGS', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Good', score: 8.5 },
+  { month: '2025-11', company: 'Dimerco', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
+  { month: '2025-11', company: 'DP World', frequency: 'Medium', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '>4 hours', evaluation: 'Fair', score: 5 },
+  { month: '2025-11', company: 'JAS Forwarding', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
+  { month: '2025-11', company: 'Kuehne+Nagel', frequency: 'High', completeness: 'Excellent', formatStandards: 'Fair', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 9 },
+  { month: '2025-11', company: 'Pegasus Forwarding', frequency: 'Low', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 6 },
+  { month: '2025-11', company: 'Scan Global Logistics', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
+  { month: '2025-11', company: 'Schneider', frequency: 'Medium', completeness: 'Good', formatStandards: 'Fair', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7 },
+  { month: '2025-11', company: 'Speedmark', frequency: 'Medium', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7.5 },
+  // 保留部分 12 月样例
+  { month: '2025-12', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 9.8 },
+  { month: '2025-12', company: 'DP World', frequency: 'Low', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '>4 hours', evaluation: 'Fair', score: 4.2 },
+];
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'EN' | 'CN'>('CN');
   const t = TRANSLATIONS[lang];
   const [activeTab, setActiveTab] = useState<'AUDIT' | 'ASSESSMENT'>('ASSESSMENT');
-  const [records, setRecords] = useState<LogisticsRecord[]>([]);
-  const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v2');
-    // Cast parsed object to correct type for state safety
+    // 版本升级到 v3 以确保新录入的 11月数据被用户看到
+    const saved = localStorage.getItem('fwd_assessments_cloud_v3');
     return saved ? (JSON.parse(saved) as ForwarderAssessment[]) : INITIAL_ASSESSMENTS;
   });
 
   const availableMonths = useMemo(() => {
-    // Explicitly typing sort parameters to resolve 'unknown' type inference on Array.from(Set)
     return Array.from(new Set(assessments.map(a => a.month))).sort((a: string, b: string) => b.localeCompare(a));
   }, [assessments]);
 
-  // 1. 默认选中最新月份
   const [matrixFilterMonth, setMatrixFilterMonth] = useState<string>('');
   useEffect(() => {
     if (!matrixFilterMonth && availableMonths.length > 0) {
@@ -130,22 +125,36 @@ const App: React.FC = () => {
     }
   }, [availableMonths]);
 
-  // 2. 全部月份模式下的展开状态
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v2', JSON.stringify(assessments));
-    // 模拟云端同步动画
+    localStorage.setItem('fwd_assessments_cloud_v3', JSON.stringify(assessments));
     setIsSyncing(true);
-    const timer = setTimeout(() => setIsSyncing(false), 600);
+    const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
   }, [assessments]);
 
+  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [newEntry, setNewEntry] = useState<ForwarderAssessment>({
     month: new Date().toISOString().substring(0, 7),
     company: '', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤2 hours', evaluation: 'Good', score: 8
   });
+
+  // 根据选择动态建议评价和分值
+  useEffect(() => {
+    if (editingIndex) return; // 编辑模式下不自动改分
+    let score = 5;
+    if (newEntry.frequency === 'High') score += 1.5;
+    if (newEntry.completeness === 'Excellent') score += 1.5;
+    if (newEntry.emailResponse === '≤2 hours') score += 2;
+    
+    let evalStr = "Fair";
+    if (score >= 9) evalStr = "Excellent";
+    else if (score >= 8) evalStr = "Good";
+
+    setNewEntry(prev => ({ ...prev, score: Math.min(10, score), evaluation: evalStr }));
+  }, [newEntry.frequency, newEntry.completeness, newEntry.emailResponse]);
 
   const filteredGrouped = useMemo(() => {
     const groups: { [key: string]: ForwarderAssessment[] } = {};
@@ -155,7 +164,6 @@ const App: React.FC = () => {
         groups[a.month].push(a);
       }
     });
-    // Explicitly typed parameters for string sorting
     return Object.entries(groups).sort((a: [string, any], b: [string, any]) => b[0].localeCompare(a[0]));
   }, [assessments, matrixFilterMonth]);
 
@@ -168,17 +176,51 @@ const App: React.FC = () => {
     });
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setLoading(true);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const parsed = parseLogisticsCSV(e.target?.result as string);
-      setRecords(parsed);
-      setLoading(false);
-    };
-    reader.readAsText(file);
+  const handleEdit = (record: ForwarderAssessment) => {
+    setEditingIndex({ month: record.month, company: record.company });
+    setNewEntry({ ...record });
+    setShowEntryModal(true);
+  };
+
+  const handleDelete = (month: string, company: string) => {
+    if (confirm(t.deleteConfirm)) {
+      setAssessments(prev => prev.filter(a => !(a.month === month && a.company === company)));
+    }
+  };
+
+  const saveAssessment = () => {
+    if (!newEntry.company) {
+      alert(t.selectFwd);
+      return;
+    }
+    if (editingIndex) {
+      setAssessments(prev => prev.map(a => 
+        (a.month === editingIndex.month && a.company === editingIndex.company) ? newEntry : a
+      ));
+    } else {
+      const exists = assessments.some(a => a.month === newEntry.month && a.company === newEntry.company);
+      if (exists) {
+        if (confirm("已存在该记录，是否覆盖？")) {
+           setAssessments(prev => prev.map(a => 
+            (a.month === newEntry.month && a.company === newEntry.company) ? newEntry : a
+          ));
+        } else return;
+      } else {
+        setAssessments(prev => [newEntry, ...prev]);
+      }
+    }
+    setShowEntryModal(false);
+    setEditingIndex(null);
+  };
+
+  // 辅助函数：根据文字内容返回颜色样式 (匹配图片)
+  const getTagStyle = (text: string) => {
+    const val = text.toLowerCase();
+    if (val.includes('high') || val === 'excellent' || val === 'compliant') return 'text-emerald-600 bg-emerald-50';
+    if (val === 'good' || val.includes('basically')) return 'text-indigo-600 bg-indigo-50';
+    if (val === 'fair' || val.includes('medium')) return 'text-amber-600 bg-amber-50';
+    if (val === 'low' || val.includes('>4') || val === 'fail') return 'text-rose-600 bg-rose-50';
+    return 'text-slate-500 bg-slate-50';
   };
 
   const dashboardData = useMemo(() => {
@@ -194,7 +236,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* 顶部导航与同步状态 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -204,7 +245,7 @@ const App: React.FC = () => {
             <div>
               <h1 className="font-black text-xl tracking-tight uppercase italic">{t.auditTitle}</h1>
               <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-emerald-500'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                   {isSyncing ? t.syncing : t.synced}
                 </span>
@@ -225,7 +266,7 @@ const App: React.FC = () => {
              <button onClick={() => setLang(lang === 'EN' ? 'CN' : 'EN')} className="px-4 py-2 border border-slate-200 rounded-lg text-[10px] font-black uppercase hover:bg-white transition-all">
                 {t.switchLang}
              </button>
-             <button onClick={() => setShowEntryModal(true)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
+             <button onClick={() => { setEditingIndex(null); setNewEntry({ month: availableMonths[0] || '2025-11', company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 }); setShowEntryModal(true); }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
                 <i className="fas fa-plus mr-2"></i> {t.newAssessment}
              </button>
           </div>
@@ -236,7 +277,6 @@ const App: React.FC = () => {
         {activeTab === 'ASSESSMENT' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
             
-            {/* 核心筛选器 */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 overflow-x-auto">
               <span className="text-[11px] font-black uppercase text-indigo-600 whitespace-nowrap">{t.filterByMonth}</span>
               <div className="flex gap-2">
@@ -258,7 +298,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* 月度汇总面板 */}
             <div className="space-y-6">
               {filteredGrouped.map(([month, data]) => {
                 const isAllMode = matrixFilterMonth === 'ALL';
@@ -267,10 +306,8 @@ const App: React.FC = () => {
 
                 return (
                   <div key={month} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-500">
-                    {/* 折叠标题栏 */}
                     <button 
                       onClick={() => isAllMode && toggleMonth(month)}
-                      disabled={!isAllMode}
                       className={`w-full px-8 py-6 flex items-center justify-between border-b border-slate-100 text-left transition-colors ${isAllMode ? 'hover:bg-slate-50' : 'cursor-default'}`}
                     >
                       <div className="flex items-center gap-6">
@@ -292,7 +329,6 @@ const App: React.FC = () => {
                       )}
                     </button>
 
-                    {/* 详情内容 */}
                     {isExpanded && (
                       <div className="animate-in slide-in-from-top-2 duration-300">
                         <div className="overflow-x-auto">
@@ -302,53 +338,55 @@ const App: React.FC = () => {
                                 <th className="px-8 py-6">{t.fwdName}</th>
                                 <th className="px-6 py-6 text-center">{t.frequency}</th>
                                 <th className="px-6 py-6 text-center">{t.completeness}</th>
+                                <th className="px-6 py-6 text-center">{t.format}</th>
                                 <th className="px-6 py-6 text-center">{t.email}</th>
                                 <th className="px-8 py-6 text-right">{t.scoreLabel}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                               {data.map((a, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50/30 transition-colors">
+                                <tr key={idx} className="hover:bg-slate-50/10 transition-colors group">
                                   <td className="px-8 py-6 font-bold text-slate-700">{a.company}</td>
                                   <td className="px-6 py-6 text-center">
-                                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${a.frequency === 'High' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-500 bg-slate-100'}`}>
+                                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.frequency)}`}>
                                       {a.frequency}
                                     </span>
                                   </td>
-                                  <td className="px-6 py-6 text-center text-xs text-slate-500 italic">{a.completeness}</td>
-                                  <td className={`px-6 py-6 text-center text-xs font-bold ${a.emailResponse === '>4 hours' ? 'text-rose-500 underline' : 'text-slate-400'}`}>
-                                    {a.emailResponse}
+                                  <td className="px-6 py-6 text-center">
+                                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.completeness)}`}>
+                                      {a.completeness}
+                                    </span>
                                   </td>
-                                  <td className="px-8 py-6 text-right font-black text-lg text-indigo-600">
-                                    {a.score}
+                                  <td className="px-6 py-6 text-center">
+                                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.formatStandards)}`}>
+                                      {a.formatStandards}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-6 text-center">
+                                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.emailResponse)}`}>
+                                      {a.emailResponse}
+                                    </span>
+                                  </td>
+                                  <td className="px-8 py-6 text-right">
+                                    <div className="flex items-center justify-end gap-4">
+                                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handleEdit(a)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                                          <i className="fas fa-pen-to-square text-xs"></i>
+                                        </button>
+                                        <button onClick={() => handleDelete(a.month, a.company)} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg">
+                                          <i className="fas fa-trash-can text-xs"></i>
+                                        </button>
+                                      </div>
+                                      <span className={`font-black text-lg w-8 text-right ${a.score >= 9 ? 'text-emerald-600' : a.score < 7 ? 'text-rose-600' : 'text-indigo-600'}`}>
+                                        {a.score}
+                                      </span>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
-
-                        {/* 本月改善行动 (只有分值低时才出现) */}
-                        {critical.length > 0 && (
-                          <div className="px-8 py-8 bg-slate-900 text-white rounded-b-3xl">
-                            <h3 className="text-xs font-black uppercase tracking-widest text-indigo-400 mb-6 border-b border-slate-800 pb-4">
-                              <i className="fas fa-tools mr-2"></i> {t.actions} - {month}
-                            </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                               {critical.map((c, i) => (
-                                 <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl flex justify-between items-center">
-                                    <div>
-                                      <div className="text-sm font-black text-rose-400">{c.company}</div>
-                                      <div className="text-[10px] text-slate-400 mt-1 uppercase italic tracking-wider">Reason: Low Score {c.score}/10</div>
-                                    </div>
-                                    <button className="px-4 py-1.5 bg-rose-500/20 text-rose-300 rounded-lg text-[9px] font-bold uppercase hover:bg-rose-500 hover:text-white transition-all">
-                                       Request Plan
-                                    </button>
-                                 </div>
-                               ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -356,7 +394,6 @@ const App: React.FC = () => {
               })}
             </div>
 
-            {/* 排名统计卡片 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
                 <h3 className="text-sm font-black uppercase italic tracking-tighter mb-10 flex items-center gap-3">
@@ -368,7 +405,7 @@ const App: React.FC = () => {
                     <BarChart data={dashboardData} layout="vertical" margin={{ left: 40, right: 40 }}>
                       <CartesianGrid strokeDasharray="6 6" horizontal={true} vertical={false} stroke="#f1f5f9" />
                       <XAxis type="number" hide domain={[0, 10]} />
-                      <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 700, fill: '#64748b'}} width={100} />
+                      <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700, fill: '#64748b'}} width={120} />
                       <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 40px rgba(0,0,0,0.1)'}} cursor={{fill: '#f8fafc'}} />
                       <Bar dataKey="score" radius={[0, 12, 12, 0]} barSize={24}>
                         {dashboardData.map((e, idx) => <Cell key={idx} fill={e.score >= 8 ? '#10b981' : e.score < 7 ? '#f43f5e' : '#6366f1'} />)}
@@ -377,15 +414,14 @@ const App: React.FC = () => {
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm overflow-y-auto">
+              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
                  <h3 className="text-xs font-black uppercase text-slate-400 tracking-[0.2em] mb-8">{t.standards}</h3>
                  <div className="space-y-6">
                     {SERVICE_STANDARDS.map((s, i) => (
-                      <div key={i} className="group">
+                      <div key={i} className="group border-b border-slate-50 pb-6 last:border-0">
                         <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">{s.item}</div>
-                        <p className="text-xs font-bold text-slate-700 leading-relaxed mb-1">{s.detail}</p>
-                        <div className="text-[9px] font-black text-emerald-600 italic">Goal: {s.goal}</div>
-                        <div className="mt-4 border-b border-slate-50 group-last:hidden"></div>
+                        <p className="text-xs font-bold text-slate-700 mb-1">{s.detail}</p>
+                        <div className="text-[9px] font-black text-emerald-600 italic">Target: {s.goal}</div>
                       </div>
                     ))}
                  </div>
@@ -396,50 +432,68 @@ const App: React.FC = () => {
 
         {activeTab === 'AUDIT' && (
            <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
-              <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-8 text-slate-300">
-                <i className="fas fa-file-csv text-4xl"></i>
-              </div>
-              <h2 className="text-2xl font-black text-slate-400 uppercase italic">Wait for Data Upload</h2>
+              <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
+              <h2 className="text-2xl font-black text-slate-400 uppercase italic">Waiting for Audit Data</h2>
               <p className="text-slate-400 mt-4 max-w-md mx-auto">Upload the monthly 214 forwarder CSV file to begin the AI-powered audit process.</p>
-              <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] cursor-pointer hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">
+              <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all">
                  <i className="fas fa-cloud-upload-alt"></i> {t.importData}
-                 <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
+                 <input type="file" className="hidden" accept=".csv" />
               </label>
            </div>
         )}
       </main>
 
-      {/* 录入弹窗 */}
       {showEntryModal && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in zoom-in duration-300">
            <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden p-10 relative">
-              <button onClick={() => setShowEntryModal(false)} className="absolute top-8 right-8 text-slate-300 hover:text-rose-500 transition-all">
+              <button onClick={() => { setShowEntryModal(false); setEditingIndex(null); }} className="absolute top-8 right-8 text-slate-300 hover:text-rose-500 transition-all">
                 <i className="fas fa-times text-2xl"></i>
               </button>
-              <h2 className="text-2xl font-black uppercase italic mb-8">{t.newAssessment}</h2>
+              <h2 className="text-2xl font-black uppercase italic mb-8">
+                {editingIndex ? t.editAssessment : t.newAssessment}
+              </h2>
               <div className="grid grid-cols-2 gap-6">
                  <div className="space-y-1">
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.monthPeriod}</label>
-                    <input type="month" value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold" />
+                    <input type="month" disabled={!!editingIndex} value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className={`w-full border-none rounded-xl px-5 py-3 text-sm font-bold ${editingIndex ? 'bg-slate-100' : 'bg-slate-50'}`} />
                  </div>
                  <div className="space-y-1">
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.fwdName}</label>
-                    <select value={newEntry.company} onChange={e => setNewEntry({...newEntry, company: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
+                    <select disabled={!!editingIndex} value={newEntry.company} onChange={e => setNewEntry({...newEntry, company: e.target.value})} className={`w-full border-none rounded-xl px-5 py-3 text-sm font-bold ${editingIndex ? 'bg-slate-100' : 'bg-slate-50'}`}>
                        <option value="">{t.selectFwd}</option>
                        {FORWARDER_LIST.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                  </div>
-                 {['frequency', 'completeness', 'formatStandards', 'emailResponse'].map(key => (
-                    <div key={key} className="space-y-1">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{key.toUpperCase()}</label>
-                       <select value={(newEntry as any)[key]} onChange={e => setNewEntry({...newEntry, [key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
-                          {key === 'emailResponse' ? ['≤2 hours', '≤4 hours', '>4 hours'].map(o => <option key={o}>{o}</option>) : ['High', 'Medium', 'Low', 'Excellent', 'Good', 'Fair', 'Compliant', 'Basically Compliant'].map(o => <option key={o}>{o}</option>)}
+                 {[
+                    { key: 'frequency', opts: ['High', 'Medium', 'Low'] },
+                    { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] },
+                    { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] },
+                    { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }
+                 ].map(field => (
+                    <div key={field.key} className="space-y-1">
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{field.key.toUpperCase()}</label>
+                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
+                          {field.opts.map(o => <option key={o} value={o}>{o}</option>)}
                        </select>
                     </div>
                  ))}
               </div>
-              <button onClick={() => { setAssessments([...assessments, {...newEntry, score: Math.random() * 5 + 5}]); setShowEntryModal(false); }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
-                {t.finalize}
+              
+              <div className="mt-8 p-6 bg-indigo-50 rounded-2xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div>
+                  <div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div>
+                </div>
+                <div className="text-right">
+                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assessment Result</div>
+                   <div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                     {newEntry.evaluation}
+                   </div>
+                </div>
+              </div>
+
+              <button onClick={saveAssessment} className={`w-full mt-10 py-5 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] transition-all shadow-xl ${editingIndex ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'}`}>
+                {editingIndex ? t.updateRecord : t.finalize}
               </button>
            </div>
         </div>
@@ -448,13 +502,6 @@ const App: React.FC = () => {
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
         Cloud Sync Active // 214 Data Node v3.9
       </footer>
-
-      {loading && (
-        <div className="fixed inset-0 z-[101] bg-white/90 backdrop-blur-xl flex flex-col items-center justify-center">
-          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] animate-pulse">Processing Master 214 File...</p>
-        </div>
-      )}
     </div>
   );
 };
