@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { LogisticsRecord, ForwarderAssessment, ServiceStandard } from './types';
-import { analyzeLogisticsData, generateCollectiveFeedbackEmail } from './services/geminiService';
+import { analyzeLogisticsData, generateCollectiveFeedbackEmail, generateExplanationEmail } from './services/geminiService';
+import { parseLogisticsCSV } from './utils/csvParser';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Cell
@@ -39,7 +40,12 @@ const TRANSLATIONS = {
     importBackup: "Import Backup",
     genCollectiveEmail: "Group Feedback Email",
     copySuccess: "Copied to clipboard!",
-    collectiveEmailTitle: "Monthly Partner Performance Review"
+    collectiveEmailTitle: "Monthly Partner Performance Review",
+    auditSummary: "214 Data Snapshot",
+    totalShipments: "Total Shipments",
+    overdueShipments: "Overdue (Alert)",
+    clearData: "Clear Data",
+    genIndividualEmail: "Draft Explanation"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -72,7 +78,12 @@ const TRANSLATIONS = {
     importBackup: "恢复备份",
     genCollectiveEmail: "生成全员反馈邮件",
     copySuccess: "内容已复制到剪贴板",
-    collectiveEmailTitle: "月度合作伙伴绩效回顾"
+    collectiveEmailTitle: "月度合作伙伴绩效回顾",
+    auditSummary: "214 数据审计快照",
+    totalShipments: "运单总量",
+    overdueShipments: "逾期告警",
+    clearData: "清空数据",
+    genIndividualEmail: "生成解释请求邮件"
   }
 };
 
@@ -107,6 +118,9 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
+  // 审计中心数据
+  const [logisticsRecords, setLogisticsRecords] = useState<LogisticsRecord[]>([]);
+
   // 邮件预览状态
   const [collectiveEmail, setCollectiveEmail] = useState<string>('');
   const [isEmailLoading, setIsEmailLoading] = useState(false);
@@ -159,6 +173,19 @@ const App: React.FC = () => {
     setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
   }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        const parsed = parseLogisticsCSV(text);
+        setLogisticsRecords(parsed);
+      };
+      reader.readAsText(file);
+    }
+  };
+
   const generateAIInsight = async () => {
     setIsAiLoading(true);
     try {
@@ -188,6 +215,20 @@ const App: React.FC = () => {
       setShowEmailModal(true);
     } catch (e) {
       alert("AI Generation failed.");
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
+
+  const handleIndividualEmail = async (fwd: string, hawb: string) => {
+    setIsEmailLoading(true);
+    try {
+      const singleRecord = logisticsRecords.filter(r => r.hawb === hawb);
+      const content = await generateExplanationEmail(fwd, singleRecord);
+      setCollectiveEmail(content);
+      setShowEmailModal(true);
+    } catch (e) {
+      alert("Generation failed");
     } finally {
       setIsEmailLoading(false);
     }
@@ -232,6 +273,8 @@ const App: React.FC = () => {
     if (val === 'low' || val.includes('>4') || val === 'fail') return 'text-rose-600 bg-rose-50';
     return 'text-slate-500 bg-slate-50';
   };
+
+  const overdueCount = logisticsRecords.filter(r => r.isOverdue).length;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
@@ -434,19 +477,90 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'AUDIT' && (
-           <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
-              <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
-              <h2 className="text-2xl font-black text-slate-400 uppercase italic">Audit Workspace</h2>
-              <p className="text-slate-400 mt-4 max-w-md mx-auto">Upload the 214 master file to generate automatic data quality reports.</p>
-              <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
-                 <i className="fas fa-cloud-upload-alt"></i> {t.importData}
-                 <input type="file" className="hidden" accept=".csv" />
-              </label>
-           </div>
+          <div className="animate-in fade-in duration-500">
+            {logisticsRecords.length === 0 ? (
+               <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
+                  <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
+                  <h2 className="text-2xl font-black text-slate-400 uppercase italic">Audit Workspace</h2>
+                  <p className="text-slate-400 mt-4 max-w-md mx-auto">Upload the 214 master file to generate automatic data quality reports.</p>
+                  <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
+                     <i className="fas fa-cloud-upload-alt"></i> {t.importData}
+                     <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
+                  </label>
+               </div>
+            ) : (
+               <div className="space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+                      <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{t.totalShipments}</div>
+                      <div className="text-4xl font-black text-indigo-600 mt-2 tracking-tighter">{logisticsRecords.length}</div>
+                    </div>
+                    <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm">
+                      <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.overdueShipments}</div>
+                      <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{overdueCount}</div>
+                    </div>
+                    <div className="flex items-center justify-end px-4">
+                      <button onClick={() => setLogisticsRecords([])} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
+                        <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                      <h2 className="text-xl font-black uppercase italic tracking-tight">{t.auditSummary}</h2>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                          <tr>
+                            <th className="px-8 py-6">FWD</th>
+                            <th className="px-6 py-6">HAWB</th>
+                            <th className="px-6 py-6">ETA (AT)</th>
+                            <th className="px-6 py-6">EDD (AY)</th>
+                            <th className="px-6 py-6 text-center">Status</th>
+                            <th className="px-8 py-6 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {logisticsRecords.slice(0, 100).map((r, idx) => (
+                            <tr key={idx} className={`hover:bg-slate-50/10 transition-colors ${r.isOverdue ? 'bg-rose-50/20' : ''}`}>
+                              <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
+                              <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
+                              <td className="px-6 py-6 text-xs text-slate-500">{r.etaDestination || '---'}</td>
+                              <td className="px-6 py-6 text-xs text-slate-500">{r.estimatedDeliveryDate || '---'}</td>
+                              <td className="px-6 py-6 text-center">
+                                <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${r.isOverdue ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                                  {r.isOverdue ? 'Overdue' : 'On-Track'}
+                                </span>
+                              </td>
+                              <td className="px-8 py-6 text-right">
+                                {r.isOverdue && (
+                                  <button 
+                                    onClick={() => handleIndividualEmail(r.forwarderName, r.hawb)}
+                                    className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all text-xs"
+                                    title={t.genIndividualEmail}
+                                  >
+                                    <i className="fas fa-magic"></i>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {logisticsRecords.length > 100 && (
+                        <div className="p-8 text-center text-slate-400 text-[10px] font-bold uppercase">Showing top 100 records for performance</div>
+                      )}
+                    </div>
+                  </div>
+               </div>
+            )}
+          </div>
         )}
       </main>
 
-      {/* 全员邮件预览模态框 */}
+      {/* 邮件预览模态框 */}
       {showEmailModal && (
         <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
