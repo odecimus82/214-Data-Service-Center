@@ -63,11 +63,15 @@ const TRANSLATIONS = {
     editAuditDate: "Correct Delivery Date",
     saveChanges: "Save Changes",
     newEddDate: "Revised EDD (YYYY-MM-DD)",
-    activateAI: "Activate AI Engine",
-    keyRequired: "API Key Selection Required",
-    keyDesc: "To enable AI features, please authorize your key or ensure the environment variable API_KEY is set in Vercel.",
-    vercelConfig: "Vercel Configuration Alert: Please add API_KEY to your project's Environment Variables.",
-    exportAssessment: "Export Scores (CSV)"
+    activateAI: "Check Deployment Status",
+    keyRequired: "Redeploy Required",
+    keyDesc: "You have configured the API Key in Vercel, but you must trigger a 'Redeploy' for changes to take effect.",
+    vercelConfig: "Vercel Sync Instructions:",
+    vercelStep1: "1. Go to Vercel Dashboard > Deployments",
+    vercelStep2: "2. Click '...' on the latest build",
+    vercelStep3: "3. Select 'Redeploy' to apply API_KEY",
+    exportAssessment: "Export Scores (CSV)",
+    refreshPage: "Refresh Page"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -118,11 +122,15 @@ const TRANSLATIONS = {
     editAuditDate: "修正日期错误",
     saveChanges: "保存修改",
     newEddDate: "修正后的 EDD (YYYY-MM-DD)",
-    activateAI: "激活 AI 引擎",
-    keyRequired: "需要授权 API 密钥",
-    keyDesc: "为了使用 AI 自动生成邮件和报告，请授权 API 密钥或确保 Vercel 环境变量中已配置 API_KEY。",
-    vercelConfig: "Vercel 配置提示：请在 Vercel 项目设置的 Environment Variables 中添加 API_KEY。",
-    exportAssessment: "导出评分数据"
+    activateAI: "检查部署状态",
+    keyRequired: "需要重新部署 (Redeploy)",
+    keyDesc: "检测到您已在 Vercel 后台配置环境变量，但必须执行“重新部署”才能让 Key 正式生效。",
+    vercelConfig: "激活 AI 引擎最后一步：",
+    vercelStep1: "1. 进入 Vercel 项目的 Deployments 页面",
+    vercelStep2: "2. 在最新的部署记录右侧点击三个点 ...",
+    vercelStep3: "3. 选择 Redeploy (重新部署) 并等待完成",
+    exportAssessment: "导出评分数据",
+    refreshPage: "刷新页面"
   }
 };
 
@@ -202,21 +210,14 @@ const App: React.FC = () => {
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         // @ts-ignore
         const hasKey = await window.aistudio.hasSelectedApiKey();
-        setIsApiKeySelected(hasKey);
+        if (hasKey) setIsApiKeySelected(true);
       }
     };
     checkKey();
   }, []);
 
-  const handleOpenKeySelector = async () => {
-    // @ts-ignore
-    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
-      // @ts-ignore
-      await window.aistudio.openSelectKey();
-      setIsApiKeySelected(true);
-    } else {
-      alert(t.vercelConfig);
-    }
+  const handleRefresh = () => {
+    window.location.reload();
   };
 
   const dynamicFwdList = useMemo(() => {
@@ -459,29 +460,40 @@ const App: React.FC = () => {
   if (!isApiKeySelected && !process.env.API_KEY) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
-        <div className="max-w-md w-full bg-slate-800 rounded-[3rem] p-12 text-center border border-slate-700 shadow-2xl animate-in zoom-in duration-500">
+        <div className="max-w-xl w-full bg-slate-800 rounded-[3rem] p-12 text-center border border-slate-700 shadow-2xl animate-in zoom-in duration-500">
           <div className="w-20 h-20 bg-indigo-500/10 rounded-[2rem] flex items-center justify-center mx-auto mb-8 relative">
             <div className="absolute inset-0 bg-indigo-500 rounded-[2rem] animate-ping opacity-20"></div>
-            <i className="fas fa-microchip text-indigo-400 text-3xl"></i>
+            <i className="fas fa-rocket text-indigo-400 text-3xl"></i>
           </div>
           <h1 className="text-white text-2xl font-black uppercase italic tracking-tight mb-4">{t.keyRequired}</h1>
           <p className="text-slate-400 text-sm leading-relaxed mb-10">{t.keyDesc}</p>
-          <button 
-            onClick={handleOpenKeySelector}
-            className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-indigo-500 shadow-xl shadow-indigo-900 transition-all flex items-center justify-center gap-3"
-          >
-            <i className="fas fa-key"></i> {t.activateAI}
-          </button>
+          
+          <div className="space-y-4 mb-10">
+             <button 
+              onClick={handleRefresh}
+              className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-indigo-500 shadow-xl shadow-indigo-900 transition-all flex items-center justify-center gap-3"
+            >
+              <i className="fas fa-sync-alt"></i> {t.refreshPage}
+            </button>
+          </div>
           
           <div className="mt-8 pt-8 border-t border-slate-700">
-             <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="inline-block text-[9px] font-bold text-slate-500 uppercase hover:text-indigo-400 transition-colors tracking-widest mb-4">
+             <div className="bg-slate-900/50 p-6 rounded-2xl text-left border border-slate-700/50">
+                <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <i className="fas fa-exclamation-triangle"></i> {t.vercelConfig}
+                </h4>
+                <div className="space-y-3 text-[11px] font-medium text-slate-300 leading-normal">
+                   <p className="flex gap-2 text-slate-400 italic"><span>{t.vercelStep1}</span></p>
+                   <p className="flex gap-2 text-indigo-100"><span>{t.vercelStep2}</span></p>
+                   <p className="flex gap-2 text-indigo-300 font-bold bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20"><span>{t.vercelStep3}</span></p>
+                </div>
+                <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[9px] text-emerald-300 italic leading-relaxed">
+                  提示：只有执行 Redeploy 动作，Vercel 才会将新的 API_KEY 编译进程序中。配置后直接刷新网页是无效的。
+                </div>
+             </div>
+             <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="mt-8 inline-block text-[9px] font-bold text-slate-500 uppercase hover:text-indigo-400 transition-colors tracking-widest">
                Gemini Billing & Project Docs
              </a>
-             <div className="bg-slate-900/50 p-4 rounded-xl text-left border border-slate-700/50">
-                <p className="text-[8px] font-mono text-indigo-300 leading-normal opacity-70">
-                   If you are seeing this on a standalone domain (e.g. Vercel), ensure you have added the 'API_KEY' Environment Variable in your dashboard.
-                </p>
-             </div>
           </div>
         </div>
       </div>
