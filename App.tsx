@@ -63,16 +63,10 @@ const TRANSLATIONS = {
     editAuditDate: "Correct Delivery Date",
     saveChanges: "Save Changes",
     newEddDate: "Revised EDD (YYYY-MM-DD)",
-    activateAI: "I've Redeployed, Let Me In",
-    keyRequired: "AI Engine Check",
-    keyDesc: "If you've already set the API_KEY and Redeployed in Vercel, you can enter. AI features will active automatically if the key is valid.",
-    vercelConfig: "Vercel Sync Instructions:",
-    vercelStep1: "1. Go to Vercel Dashboard > Deployments",
-    vercelStep2: "2. Click '...' on the latest build",
-    vercelStep3: "3. Select 'Redeploy' to apply API_KEY",
-    exportAssessment: "Export Scores (CSV)",
-    refreshPage: "Enter Dashboard",
-    skipAI: "Skip AI Check & Enter"
+    activateAI: "Activate AI",
+    aiReady: "AI Engine Ready",
+    aiConfig: "AI Config Needed",
+    exportAssessment: "Export Scores (CSV)"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -123,16 +117,10 @@ const TRANSLATIONS = {
     editAuditDate: "修正日期错误",
     saveChanges: "保存修改",
     newEddDate: "修正后的 EDD (YYYY-MM-DD)",
-    activateAI: "我已重新部署，进入系统",
-    keyRequired: "AI 引擎环境检测",
-    keyDesc: "如果您已在 Vercel 配置好 API_KEY 并完成了 Redeploy，可以直接进入。若 Key 有效，AI 功能将自动激活。",
-    vercelConfig: "激活 AI 引擎最后一步：",
-    vercelStep1: "1. 进入 Vercel 项目的 Deployments 页面",
-    vercelStep2: "2. 在最新的部署记录右侧点击三个点 ...",
-    vercelStep3: "3. 选择 Redeploy (重新部署) 并等待完成",
-    exportAssessment: "导出评分数据",
-    refreshPage: "进入系统看板",
-    skipAI: "跳过检测直接进入"
+    activateAI: "激活 AI 引擎",
+    aiReady: "AI 引擎已就绪",
+    aiConfig: "需要配置 AI",
+    exportAssessment: "导出评分数据"
   }
 };
 
@@ -167,14 +155,10 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
-  // 增加强制进入的状态
-  const [forceEnter, setForceEnter] = useState(false);
-  
-  const isApiKeySelected = useMemo(() => {
+  const [isApiKeyActive, setIsApiKeyActive] = useState(() => {
     // @ts-ignore
-    const envKey = typeof process !== 'undefined' && process.env ? process.env.API_KEY : null;
-    return !!envKey || forceEnter;
-  }, [forceEnter]);
+    return !!(typeof process !== 'undefined' && process.env && process.env.API_KEY);
+  });
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('corsair_admin_auth') === 'true');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -206,6 +190,17 @@ const App: React.FC = () => {
   });
   const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
   const [customFwdName, setCustomFwdName] = useState('');
+
+  const handleActivateAI = async () => {
+    // @ts-ignore
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      // @ts-ignore
+      await window.aistudio.openSelectKey();
+      setIsApiKeyActive(true);
+    } else {
+      alert("System key selector not available. Please ensure you have set API_KEY in Vercel and Redeployed.");
+    }
+  };
 
   const dynamicFwdList = useMemo(() => {
     const fromAssessments = assessments.map(a => a.company);
@@ -268,8 +263,8 @@ const App: React.FC = () => {
 
   const handleError = (e: any) => {
     console.error(e);
-    const msg = e.message || "";
-    alert(`AI Error: ${msg}. If you see 401/Unauthorized, check your Vercel API_KEY again.`);
+    const msg = e.message || "Unknown error";
+    alert(`AI Service Error: ${msg}\n\nPlease check your Vercel API_KEY or use the 'Activate AI' button.`);
   };
 
   const handleExportAssessments = () => {
@@ -350,7 +345,6 @@ const App: React.FC = () => {
       setAiAnalysis(report);
     } catch (e: any) {
       handleError(e);
-      setAiAnalysis(`Unauthorized: Please check your API_KEY configuration.`);
     } finally {
       setIsAiLoading(false);
     }
@@ -440,53 +434,6 @@ const App: React.FC = () => {
     setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
   }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
 
-  // 修改：仅在未强制进入且未检测到 Key 时显示引导页
-  if (!isApiKeySelected) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
-        <div className="max-w-xl w-full bg-slate-800 rounded-[3rem] p-12 text-center border border-slate-700 shadow-2xl animate-in zoom-in duration-500">
-          <div className="w-20 h-20 bg-indigo-500/10 rounded-[2rem] flex items-center justify-center mx-auto mb-8 relative">
-            <div className="absolute inset-0 bg-indigo-500 rounded-[2rem] animate-ping opacity-20"></div>
-            <i className="fas fa-microchip text-indigo-400 text-3xl"></i>
-          </div>
-          <h1 className="text-white text-2xl font-black uppercase italic tracking-tight mb-4">{t.keyRequired}</h1>
-          <p className="text-slate-400 text-sm leading-relaxed mb-10">{t.keyDesc}</p>
-          
-          <div className="flex flex-col gap-4 mb-10">
-             <button 
-              onClick={() => setForceEnter(true)}
-              className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-indigo-500 shadow-xl shadow-indigo-900 transition-all flex items-center justify-center gap-3"
-            >
-              <i className="fas fa-door-open"></i> {t.refreshPage}
-            </button>
-            <button 
-              onClick={() => setForceEnter(true)}
-              className="w-full py-3 bg-slate-700 text-slate-300 rounded-xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-slate-600 transition-all"
-            >
-               {t.skipAI}
-            </button>
-          </div>
-          
-          <div className="mt-8 pt-8 border-t border-slate-700">
-             <div className="bg-slate-900/50 p-6 rounded-2xl text-left border border-slate-700/50">
-                <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <i className="fas fa-exclamation-triangle"></i> {t.vercelConfig}
-                </h4>
-                <div className="space-y-3 text-[11px] font-medium text-slate-300 leading-normal">
-                   <p className="flex gap-2 text-slate-400 italic"><span>{t.vercelStep1}</span></p>
-                   <p className="flex gap-2 text-indigo-100"><span>{t.vercelStep2}</span></p>
-                   <p className="flex gap-2 text-indigo-300 font-bold bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20"><span>{t.vercelStep3}</span></p>
-                </div>
-                <div className="mt-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[9px] text-emerald-300 italic leading-relaxed">
-                  提示：只有执行 Redeploy 动作，Vercel 才会将新的 API_KEY 编译进程序中。配置后直接刷新网页是无效的。
-                </div>
-             </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
@@ -498,9 +445,9 @@ const App: React.FC = () => {
             <div>
               <h1 className="font-black text-xl uppercase italic leading-none tracking-tight">{t.auditTitle}</h1>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${isApiKeyActive ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`}></span>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  {isSyncing ? t.syncing : t.synced}
+                  {isApiKeyActive ? t.aiReady : t.aiConfig}
                 </span>
               </div>
             </div>
@@ -516,6 +463,9 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex gap-4 items-center">
+             <button onClick={handleActivateAI} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${isApiKeyActive ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-600 text-white shadow-md'}`}>
+                <i className={`fas fa-${isApiKeyActive ? 'check' : 'plug'} mr-2`}></i> {t.activateAI}
+             </button>
              <button onClick={() => setLang(lang === 'EN' ? 'CN' : 'EN')} className="px-4 py-2 border border-slate-200 rounded-lg text-[10px] font-black uppercase hover:bg-white transition-all">
                 {t.switchLang}
              </button>
