@@ -1,0 +1,5 @@
+{
+  "name": "214 Data Service Center",
+  "description": "A sophisticated logistics data management system for processing 214 forwarder data, identifying overdue shipments, and using Gemini AI to draft explanation requests.",
+  "requestFramePermissions": []
+}
