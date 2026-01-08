@@ -10,22 +10,21 @@ import {
 
 // Firebase Imports
 // @ts-ignore
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 // @ts-ignore
-import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, setDoc, doc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 /**
- * 注意：在生产环境下，你应该在 Google Cloud 控制台创建一个 Firebase 项目
- * 并将以下配置替换为你自己的配置。
- * 如果没有配置，应用将退回到 localStorage 模式。
+ * 已根据你的截图更新配置信息
  */
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSy...", // 建议通过环境变量注入
-  authDomain: "corsair-logistics.firebaseapp.com",
-  projectId: "corsair-logistics",
-  storageBucket: "corsair-logistics.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  apiKey: "AIzaSyAiPXaE4lknUGajzGaRi_qhA2RABZ4qIeM",
+  authDomain: "default-gemini-project-33363.firebaseapp.com",
+  projectId: "default-gemini-project-33363",
+  storageBucket: "default-gemini-project-33363.firebasestorage.app",
+  messagingSenderId: "116172860586",
+  appId: "1:116172860586:web:e71207eecfc87c5ccdf4d3",
+  measurementId: "G-X3XP0TFDHV"
 };
 
 const TRANSLATIONS = {
@@ -50,13 +49,13 @@ const TRANSLATIONS = {
     switchLang: "中文",
     filterByMonth: "Timeline:",
     allMonths: "All History",
-    syncing: "Cloud Syncing...",
-    synced: "Cloud Synchronized",
+    syncing: "Syncing...",
+    synced: "Cloud Linked",
     pushCloud: "Push to Database",
     exportData: "Export Backup",
     importBackup: "Import Backup",
     genCollectiveEmail: "Group Feedback Email",
-    copySuccess: "Copied to clipboard!",
+    copySuccess: "Copied!",
     collectiveEmailTitle: "Partner Performance Review",
     auditSummary: "Past Due Shipment Report",
     totalShipments: "Total Past Due",
@@ -66,7 +65,7 @@ const TRANSLATIONS = {
     allFwd: "All Forwarders",
     addNewFwd: "+ Add New FWD",
     remarksLabel: "Supplementary Explanation",
-    remarksPlaceholder: "Enter any additional observations or explanations here...",
+    remarksPlaceholder: "Enter any additional observations...",
     adminLogin: "Admin Access",
     username: "Username",
     password: "Password",
@@ -81,7 +80,8 @@ const TRANSLATIONS = {
     aiReady: "AI Engine Ready",
     aiConfig: "AI Config Needed",
     exportAssessment: "Export Scores (CSV)",
-    dbError: "Database Sync Error"
+    dbError: "Database Sync Error",
+    dbWait: "Connecting Cloud..."
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -104,13 +104,13 @@ const TRANSLATIONS = {
     switchLang: "English",
     filterByMonth: "月份：",
     allMonths: "全部月份",
-    syncing: "云端同步中...",
-    synced: "云端已同步",
+    syncing: "同步中...",
+    synced: "云端已就绪",
     pushCloud: "同步到数据库",
     exportData: "导出备份",
     importBackup: "恢复备份",
     genCollectiveEmail: "生成全员反馈邮件",
-    copySuccess: "内容已复制到剪贴板",
+    copySuccess: "已复制",
     collectiveEmailTitle: "合作伙伴绩效回顾",
     auditSummary: "Past Due 运单审计报表",
     totalShipments: "待解释 Shipment 总量",
@@ -135,7 +135,8 @@ const TRANSLATIONS = {
     aiReady: "AI 引擎已就绪",
     aiConfig: "需要配置 AI",
     exportAssessment: "导出评分数据",
-    dbError: "云端同步失败"
+    dbError: "云端同步失败",
+    dbWait: "连接云端中..."
   }
 };
 
@@ -157,8 +158,7 @@ const App: React.FC = () => {
   const [lang, setLang] = useState<'EN' | 'CN'>('CN');
   const t = TRANSLATIONS[lang];
   const [activeTab, setActiveTab] = useState<'AUDIT' | 'ASSESSMENT'>('ASSESSMENT');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [dbStatus, setDbStatus] = useState<'IDLE' | 'SYNCING' | 'ERROR'>('IDLE');
+  const [dbStatus, setDbStatus] = useState<'IDLE' | 'SYNCING' | 'ERROR' | 'OFFLINE'>('OFFLINE');
   
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -187,26 +187,22 @@ const App: React.FC = () => {
   // Initialize Firestore
   const db = useMemo(() => {
     try {
-      const app = initializeApp(firebaseConfig);
+      const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
       return getFirestore(app);
     } catch (e) {
-      console.warn("Firebase not configured, falling back to local mode.");
+      console.warn("Firebase initialization failed", e);
+      setDbStatus('ERROR');
       return null;
     }
   }, []);
 
   // Fetch from Cloud on Mount
   useEffect(() => {
-    if (!db) {
-      const saved = localStorage.getItem('fwd_assessments_local_cache');
-      if (saved) setAssessments(JSON.parse(saved));
-      return;
-    }
+    if (!db) return;
 
     setDbStatus('SYNCING');
     const q = query(collection(db, "fwd_assessments"), orderBy("month", "desc"));
     
-    // 实时监听云端变化 (Real-time Sync!)
     const unsubscribe = onSnapshot(q, (snapshot: any) => {
       const data = snapshot.docs.map((doc: any) => doc.data() as ForwarderAssessment);
       setAssessments(data);
@@ -233,7 +229,6 @@ const App: React.FC = () => {
     if (!db) return;
     setDbStatus('SYNCING');
     try {
-      // 使用 "月份+公司名" 作为唯一 ID
       const docId = `${entry.month}_${entry.company.replace(/\s+/g, '_')}`;
       await setDoc(doc(db, "fwd_assessments", docId), entry);
       setDbStatus('IDLE');
@@ -264,7 +259,7 @@ const App: React.FC = () => {
       await window.aistudio.openSelectKey();
       setIsApiKeyActive(true);
     } else {
-      alert("System key selector not available. Please ensure you have set API_KEY in Vercel/Cloud Run Environment.");
+      alert("System key selector not available.");
     }
   };
 
@@ -323,7 +318,7 @@ const App: React.FC = () => {
   const handleError = (e: any) => {
     console.error(e);
     const msg = e.message || "Unknown error";
-    alert(`AI Service Error: ${msg}\n\nPlease check your API_KEY.`);
+    alert(`AI Service Error: ${msg}`);
   };
 
   const handleExportAssessments = () => {
