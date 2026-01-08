@@ -42,6 +42,7 @@ export interface ForwarderAssessment {
   emailResponse: string;   // <=2h, <=4h, >4h
   evaluation: string;      // Excellent, Good, Fair
   score: number;           // 1-10
+  remarks?: string;        // 补充说明
 }
 
 // 新增：服务标准接口

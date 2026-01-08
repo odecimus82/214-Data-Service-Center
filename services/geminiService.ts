@@ -4,25 +4,33 @@ import { LogisticsRecord, ForwarderAssessment } from "../types";
 
 const getAIInstance = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+/**
+ * 汇总生成指定货代的 Past Due 催办邮件
+ */
 export const generateExplanationEmail = async (fwdName: string, records: LogisticsRecord[]) => {
   const ai = getAIInstance();
-  const shipmentsInfo = records.map(r => 
-    `HAWB: ${r.hawb}, EDD (AY): ${r.estimatedDeliveryDate}, On Board (AS): ${r.onBoardDate}, ETA (AT): ${r.etaDestination}`
+  
+  // 提取所有 Past Due 运单的信息
+  const shipmentsTable = records.map(r => 
+    `| ${r.hawb} | EDD (AY): ${r.estimatedDeliveryDate} | Origin: ${r.origin} | Dest: ${r.destination} |`
   ).join('\n');
 
   const prompt = `
-    Forwarder Name: ${fwdName}
-    Overdue Shipments Data:
-    ${shipmentsInfo}
-
-    Task: Write a professional dual-language (English and Chinese) email.
+    Forwarder: ${fwdName}
+    Total Past Due Shipments: ${records.length}
     
-    CRITICAL RULES:
-    1. STRICTLY use the dates provided above. DO NOT guess, change, or format the dates differently. 
-    2. Explicitly mention that the Estimated Delivery Date (AY column) has passed.
-    3. The Actual Delivery Date (BB column) is currently empty in our system for these HAWBs.
-    4. Request an explanation for the delay and a revised arrival schedule.
-    5. Maintain a professional, data-driven tone.
+    Shipment List:
+    ${shipmentsTable}
+
+    Task: Write a professional dual-language (English and Chinese) email requesting an immediate status update.
+    
+    STRICT REQUIREMENTS:
+    1. Context: You must state clearly that these discrepancies were identified from the "214 EDI/CSV status files" uploaded by their team to our system via FTP.
+    2. Terminology: Use "Past Due" instead of overdue, and "Shipment" instead of record/order.
+    3. Tone: Firm, data-driven, and professional.
+    4. Key Point: The Estimated Delivery Date (EDD) has passed, and no Actual Delivery Date (ADD) has been recorded in the FTP-uploaded data.
+    5. Call to Action: Request a root cause analysis for the delays and a revised arrival schedule for each HAWB.
+    6. Formatting: Present the HAWB list clearly in a table or structured list.
   `;
 
   const response = await ai.models.generateContent({
@@ -33,13 +41,9 @@ export const generateExplanationEmail = async (fwdName: string, records: Logisti
   return response.text;
 };
 
-/**
- * 优化：生成全员绩效反馈邮件 (不包含具体名称和数量)
- */
 export const generateCollectiveFeedbackEmail = async (month: string, assessments: ForwarderAssessment[]) => {
   const ai = getAIInstance();
   
-  // 提供汇总数据供 AI 分析共性，但告知其不要在正文中列出
   const summaryMetrics = {
     avgScore: assessments.reduce((acc, curr) => acc + curr.score, 0) / assessments.length,
     lowFreqCount: assessments.filter(a => a.frequency !== 'High').length,
@@ -52,29 +56,17 @@ export const generateCollectiveFeedbackEmail = async (month: string, assessments
     Sender: Corsair Logistics Management Team
     Target Audience: All Logistics Partners (BCC Group Email)
     Current Review Month: ${month}
-    General Performance Trends (FOR AI ANALYSIS ONLY, DO NOT LIST IN EMAIL):
+    General Performance Trends:
     ${JSON.stringify(summaryMetrics, null, 2)}
 
     Task: Write a highly professional collective performance feedback email for Corsair's global forwarder pool.
     
-    STRICT CONSTRAINTS (MANDATORY):
-    1. DO NOT mention any specific company names (e.g., THI, AGS, Schneider etc.).
-    2. DO NOT mention the total count of forwarders or specific quantity statistics.
-    3. Use a "Pool Performance" perspective.
-    4. Focus on general technical gaps and compliance.
+    STRICT CONSTRAINTS:
+    1. DO NOT mention any specific company names.
+    2. Focus on "Shipment visibility" and "Status 214 compliance via FTP uploads".
+    3. Mention "Past Due" management as a critical KPI.
 
-    Content Structure:
-    1. Opening: Corsair's commitment to supply chain visibility and data-driven logistics management.
-    2. Data Integrity Observation: 
-       - Discuss EDI 214 status frequency and why daily updates (High Frequency) are critical for Corsair's end-to-end planning.
-       - Highlight common gaps in milestone completeness (especially missing actual delivery timestamps).
-       - Standardization: Mention the need for strict adherence to ISO timestamp formats and milestone naming conventions (Corsair SOP).
-    3. Communication SLA: Reiterate the requirement for email response times (Urgent vs Standard).
-    4. Closing: Instruct each partner to check their INDIVIDUAL scorecard (sent separately) for specific improvement items.
-
-    Language: Professional Dual-Language (English followed by Chinese).
-    Terminology: Status 214, EDI Latency, Milestone Consistency, Field Integrity, SLA Compliance, Visibility, Corsair Logistics SOP.
-    Tone: Sophisticated, authoritative, but partnership-oriented.
+    Language: Professional Dual-Language (English/Chinese).
   `;
 
   const response = await ai.models.generateContent({
@@ -88,52 +80,22 @@ export const generateCollectiveFeedbackEmail = async (month: string, assessments
 export const analyzeLogisticsData = async (records: LogisticsRecord[]) => {
   const ai = getAIInstance();
   const summary = records.reduce((acc: any, curr) => {
-    acc[curr.forwarderName] = acc[curr.forwarderName] || { total: 0, overdue: 0 };
+    acc[curr.forwarderName] = acc[curr.forwarderName] || { total: 0, pastDue: 0 };
     acc[curr.forwarderName].total++;
-    if (curr.isOverdue) acc[curr.forwarderName].overdue++;
+    if (curr.isOverdue) acc[curr.forwarderName].pastDue++;
     return acc;
   }, {});
 
   const prompt = `
-    Analyze this logistics summary for Forwarders:
+    Analyze this shipment summary based on FTP uploaded 214 data:
     ${JSON.stringify(summary, null, 2)}
 
-    Please identify performance trends. Which forwarders have the highest overdue rate? 
-    Suggest 3 specific action items for the management team.
+    Identify performance trends regarding Past Due shipments.
     Answer in a concise, business-expert style.
   `;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: prompt,
-  });
-
-  return response.text;
-};
-
-export const chatWithLogisticsData = async (query: string, records: LogisticsRecord[]) => {
-  const ai = getAIInstance();
-  const compactData = records.slice(0, 50).map(r => ({
-    fwd: r.forwarderName,
-    hawb: r.hawb,
-    edd: r.estimatedDeliveryDate,
-    add: r.actualDeliveryDate,
-    status: r.isOverdue ? 'Overdue' : 'Normal'
-  }));
-  
-  const prompt = `
-    User Query: "${query}"
-    
-    Current 214 Data Snapshot (Top 50):
-    ${JSON.stringify(compactData, null, 2)}
-    
-    Rules:
-    - If the user asks about specific dates, refer exactly to the "edd" or "add" fields.
-    - Be precise. If the data is not in the snapshot, say you only have access to the current 214 file.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
     contents: prompt,
   });
 

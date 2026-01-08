@@ -20,7 +20,6 @@ const TRANSLATIONS = {
     standards: "SOP Standards",
     aiReport: "AI Insight Report",
     genReport: "Generate Analysis",
-    actionNeeded: "Action Needed",
     monthPeriod: "Target Month",
     fwdName: "Forwarder",
     scoreLabel: "Auto Score",
@@ -31,8 +30,6 @@ const TRANSLATIONS = {
     switchLang: "中文",
     filterByMonth: "Timeline:",
     allMonths: "All History",
-    viewDetails: "Expand",
-    hideDetails: "Collapse",
     syncing: "Syncing...",
     synced: "Local DB Ready",
     pushCloud: "Push to Vercel",
@@ -40,12 +37,16 @@ const TRANSLATIONS = {
     importBackup: "Import Backup",
     genCollectiveEmail: "Group Feedback Email",
     copySuccess: "Copied to clipboard!",
-    collectiveEmailTitle: "Monthly Partner Performance Review",
-    auditSummary: "214 Data Snapshot",
-    totalShipments: "Total Shipments",
-    overdueShipments: "Overdue (Alert)",
+    collectiveEmailTitle: "Partner Performance Review",
+    auditSummary: "Past Due Shipment Report",
+    totalShipments: "Total Past Due",
     clearData: "Clear Data",
-    genIndividualEmail: "Draft Explanation"
+    genAggregatedEmail: "Draft FWD Follow-up Email",
+    filterFwd: "Filter by FWD:",
+    allFwd: "All Forwarders",
+    addNewFwd: "+ Add New FWD",
+    remarksLabel: "Supplementary Explanation",
+    remarksPlaceholder: "Enter any additional observations or explanations here..."
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -58,7 +59,6 @@ const TRANSLATIONS = {
     standards: "服务标准手册",
     aiReport: "AI 智能绩效报告",
     genReport: "生成深度分析",
-    actionNeeded: "项待改善",
     monthPeriod: "评估月份",
     fwdName: "货代名称",
     scoreLabel: "系统总分",
@@ -69,8 +69,6 @@ const TRANSLATIONS = {
     switchLang: "English",
     filterByMonth: "月份：",
     allMonths: "全部月份",
-    viewDetails: "展开",
-    hideDetails: "收起",
     syncing: "同步中...",
     synced: "本地已就绪",
     pushCloud: "同步到 Vercel",
@@ -78,12 +76,16 @@ const TRANSLATIONS = {
     importBackup: "恢复备份",
     genCollectiveEmail: "生成全员反馈邮件",
     copySuccess: "内容已复制到剪贴板",
-    collectiveEmailTitle: "月度合作伙伴绩效回顾",
-    auditSummary: "214 数据审计快照",
-    totalShipments: "运单总量",
-    overdueShipments: "逾期告警",
+    collectiveEmailTitle: "合作伙伴绩效回顾",
+    auditSummary: "Past Due 运单审计报表",
+    totalShipments: "待解释 Shipment 总量",
     clearData: "清空数据",
-    genIndividualEmail: "生成解释请求邮件"
+    genAggregatedEmail: "汇总生成该货代催办邮件",
+    filterFwd: "筛选货代:",
+    allFwd: "全部货代",
+    addNewFwd: "+ 新增货代",
+    remarksLabel: "补充说明",
+    remarksPlaceholder: "在此输入任何特别说明或观察结果..."
   }
 };
 
@@ -94,19 +96,19 @@ const SERVICE_STANDARDS: ServiceStandard[] = [
   { category: 'Customer Service', item: 'Response', detail: 'Email reply: 2h for urgent, 4h for standard', goal: 'SLA Compliance' }
 ];
 
-const FORWARDER_LIST = ["THI", "AGS", "Dimerco", "DP World", "JAS Forwarding", "Kuehne+Nagel", "Pegasus Forwarding", "Scan Global Logistics", "Schneider", "Speedmark"];
+const BASE_FORWARDER_LIST = ["THI", "AGS", "Dimerco", "DP World", "JAS Forwarding", "Kuehne+Nagel", "Pegasus Forwarding", "Scan Global Logistics", "Schneider", "Speedmark"];
 
 const INITIAL_ASSESSMENTS: ForwarderAssessment[] = [
-  { month: '2025-11', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
-  { month: '2025-11', company: 'AGS', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Good', score: 8.5 },
-  { month: '2025-11', company: 'Dimerco', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
-  { month: '2025-11', company: 'DP World', frequency: 'Medium', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '>4 hours', evaluation: 'Fair', score: 5 },
-  { month: '2025-11', company: 'JAS Forwarding', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
-  { month: '2025-11', company: 'Kuehne+Nagel', frequency: 'High', completeness: 'Excellent', formatStandards: 'Fair', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 9 },
-  { month: '2025-11', company: 'Pegasus Forwarding', frequency: 'Low', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 6 },
-  { month: '2025-11', company: 'Scan Global Logistics', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
-  { month: '2025-11', company: 'Schneider', frequency: 'Medium', completeness: 'Good', formatStandards: 'Fair', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7 },
-  { month: '2025-11', company: 'Speedmark', frequency: 'Medium', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7.5 },
+  { month: '2025-11', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: 'Consistently high performance.' },
+  { month: '2025-11', company: 'AGS', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Good', score: 8.5, remarks: '' },
+  { month: '2025-11', company: 'Dimerco', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' },
+  { month: '2025-11', company: 'DP World', frequency: 'Medium', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '>4 hours', evaluation: 'Fair', score: 5.5, remarks: 'Connectivity issues reported in mid-month.' },
+  { month: '2025-11', company: 'JAS Forwarding', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' },
+  { month: '2025-11', company: 'Kuehne+Nagel', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 9, remarks: '' },
+  { month: '2025-11', company: 'Pegasus Forwarding', frequency: 'Low', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 6, remarks: 'Low visibility on EU-US lanes.' },
+  { month: '2025-11', company: 'Scan Global Logistics', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' },
+  { month: '2025-11', company: 'Schneider', frequency: 'Medium', completeness: 'Good', formatStandards: 'Fair', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7, remarks: '' },
+  { month: '2025-11', company: 'Speedmark', frequency: 'Medium', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7.5, remarks: '' }
 ];
 
 const App: React.FC = () => {
@@ -120,41 +122,95 @@ const App: React.FC = () => {
   
   // 审计中心数据
   const [logisticsRecords, setLogisticsRecords] = useState<LogisticsRecord[]>([]);
+  const [auditFilterFwd, setAuditFilterFwd] = useState<string>('ALL');
 
   // 邮件预览状态
   const [collectiveEmail, setCollectiveEmail] = useState<string>('');
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
 
+  // 评估数据
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v6');
-    return saved ? (JSON.parse(saved) as ForwarderAssessment[]) : INITIAL_ASSESSMENTS;
+    const saved = localStorage.getItem('fwd_assessments_cloud_v8');
+    if (saved) {
+      const parsed = JSON.parse(saved) as ForwarderAssessment[];
+      return parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
+    }
+    return INITIAL_ASSESSMENTS;
   });
+
+  // 货代列表管理
+  const dynamicFwdList = useMemo(() => {
+    const fromAssessments = assessments.map(a => a.company);
+    const combined = Array.from(new Set([...BASE_FORWARDER_LIST, ...fromAssessments]));
+    return combined.sort();
+  }, [assessments]);
 
   const availableMonths = useMemo(() => {
     return Array.from(new Set(assessments.map(a => a.month))).sort((a: string, b: string) => b.localeCompare(a));
   }, [assessments]);
 
   const [matrixFilterMonth, setMatrixFilterMonth] = useState<string>('');
+
   useEffect(() => {
     if (!matrixFilterMonth && availableMonths.length > 0) {
       setMatrixFilterMonth(availableMonths[0]);
     }
-  }, [availableMonths]);
+  }, [availableMonths, matrixFilterMonth]);
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v6', JSON.stringify(assessments));
+    localStorage.setItem('fwd_assessments_cloud_v8', JSON.stringify(assessments));
     setIsSyncing(true);
     const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
   }, [assessments]);
 
-  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
+  // Assessment Dashboard Data
+  const dashboardData = useMemo(() => {
+    const relevant = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
+    const scores: { [key: string]: { sum: number, count: number } } = {};
+    relevant.forEach(a => {
+      if (!scores[a.company]) scores[a.company] = { sum: 0, count: 0 };
+      scores[a.company].sum += a.score;
+      scores[a.company].count++;
+    });
+    return Object.entries(scores).map(([name, d]) => ({ name, score: parseFloat((d.sum / d.count).toFixed(2)) })).sort((a, b) => b.score - a.score);
+  }, [assessments, matrixFilterMonth]);
+
+  const filteredGrouped = useMemo(() => {
+    const filtered = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
+    const groups: { [key: string]: ForwarderAssessment[] } = {};
+    filtered.forEach(a => {
+      if (!groups[a.month]) groups[a.month] = [];
+      groups[a.month].push(a);
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [assessments, matrixFilterMonth]);
+
+  // Audit Logic
+  const pastDueRecords = useMemo(() => {
+    return logisticsRecords.filter(r => r.isOverdue && !r.actualDeliveryDate);
+  }, [logisticsRecords]);
+
+  const auditFwdOptions = useMemo(() => {
+    const fwds = new Set(pastDueRecords.map(r => r.forwarderName));
+    return Array.from(fwds).sort();
+  }, [pastDueRecords]);
+
+  const displayAuditRecords = useMemo(() => {
+    if (auditFilterFwd === 'ALL') return pastDueRecords;
+    return pastDueRecords.filter(r => r.forwarderName === auditFilterFwd);
+  }, [pastDueRecords, auditFilterFwd]);
+
   const [showEntryModal, setShowEntryModal] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
   const [newEntry, setNewEntry] = useState<ForwarderAssessment>({
     month: new Date().toISOString().substring(0, 7),
-    company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10
+    company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
   });
+
+  const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
+  const [customFwdName, setCustomFwdName] = useState('');
 
   useEffect(() => {
     let base = 4.0;
@@ -186,6 +242,38 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGenerateAggregatedEmail = async () => {
+    if (auditFilterFwd === 'ALL') {
+      alert("请先筛选具体货代再生成催办邮件");
+      return;
+    }
+    setIsEmailLoading(true);
+    try {
+      const content = await generateExplanationEmail(auditFilterFwd, displayAuditRecords);
+      setCollectiveEmail(content);
+      setShowEmailModal(true);
+    } catch (e) {
+      alert("AI Generation failed.");
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
+
+  const handleGenerateCollectiveEmail = async () => {
+    setIsEmailLoading(true);
+    try {
+      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
+      const currentData = assessments.filter(a => a.month === currentMonth);
+      const emailContent = await generateCollectiveFeedbackEmail(currentMonth, currentData);
+      setCollectiveEmail(emailContent);
+      setShowEmailModal(true);
+    } catch (e) {
+      alert("AI Generation failed.");
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
+
   const generateAIInsight = async () => {
     setIsAiLoading(true);
     try {
@@ -205,66 +293,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateCollectiveEmail = async () => {
-    setIsEmailLoading(true);
-    try {
-      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
-      const currentData = assessments.filter(a => a.month === currentMonth);
-      const emailContent = await generateCollectiveFeedbackEmail(currentMonth, currentData);
-      setCollectiveEmail(emailContent);
-      setShowEmailModal(true);
-    } catch (e) {
-      alert("AI Generation failed.");
-    } finally {
-      setIsEmailLoading(false);
-    }
-  };
-
-  const handleIndividualEmail = async (fwd: string, hawb: string) => {
-    setIsEmailLoading(true);
-    try {
-      const singleRecord = logisticsRecords.filter(r => r.hawb === hawb);
-      const content = await generateExplanationEmail(fwd, singleRecord);
-      setCollectiveEmail(content);
-      setShowEmailModal(true);
-    } catch (e) {
-      alert("Generation failed");
-    } finally {
-      setIsEmailLoading(false);
-    }
-  };
-
-  const exportBackup = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(assessments));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `214_Data_Backup_${new Date().toISOString().slice(0,10)}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
-
-  const dashboardData = useMemo(() => {
-    const relevant = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
-    const scores: { [key: string]: { sum: number, count: number } } = {};
-    relevant.forEach(a => {
-      if (!scores[a.company]) scores[a.company] = { sum: 0, count: 0 };
-      scores[a.company].sum += a.score;
-      scores[a.company].count++;
-    });
-    return Object.entries(scores).map(([name, d]) => ({ name, score: parseFloat((d.sum / d.count).toFixed(2)) })).sort((a, b) => b.score - a.score);
-  }, [assessments, matrixFilterMonth]);
-
-  const filteredGrouped = useMemo(() => {
-    const filtered = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
-    const groups: { [key: string]: ForwarderAssessment[] } = {};
-    filtered.forEach(a => {
-      if (!groups[a.month]) groups[a.month] = [];
-      groups[a.month].push(a);
-    });
-    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [assessments, matrixFilterMonth]);
-
   const getTagStyle = (text: string) => {
     const val = text.toLowerCase();
     if (val.includes('high') || val === 'excellent' || val === 'compliant') return 'text-emerald-600 bg-emerald-50';
@@ -274,18 +302,16 @@ const App: React.FC = () => {
     return 'text-slate-500 bg-slate-50';
   };
 
-  const overdueCount = logisticsRecords.filter(r => r.isOverdue).length;
-
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-indigo-200 shadow-lg">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
               <i className="fas fa-database"></i>
             </div>
             <div>
-              <h1 className="font-black text-xl tracking-tight uppercase italic leading-none">{t.auditTitle}</h1>
+              <h1 className="font-black text-xl uppercase italic leading-none">{t.auditTitle}</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -305,15 +331,19 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex gap-4">
-             <button onClick={exportBackup} className="px-4 py-2 bg-slate-50 text-slate-500 rounded-lg text-[10px] font-black uppercase border border-slate-200 hover:bg-white transition-all">
-                <i className="fas fa-download mr-2"></i> {t.exportData}
-             </button>
              <button onClick={() => setLang(lang === 'EN' ? 'CN' : 'EN')} className="px-4 py-2 border border-slate-200 rounded-lg text-[10px] font-black uppercase hover:bg-white transition-all">
                 {t.switchLang}
              </button>
-             <button onClick={() => { setEditingIndex(null); setNewEntry({ month: availableMonths[0] || '2025-11', company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 }); setShowEntryModal(true); }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
-                <i className="fas fa-plus mr-2"></i> {t.newAssessment}
-             </button>
+             {activeTab === 'ASSESSMENT' && (
+               <button onClick={() => { 
+                 setIsAddingNewFwd(false);
+                 setEditingIndex(null); 
+                 setNewEntry({ month: availableMonths[0] || '2025-11', company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' }); 
+                 setShowEntryModal(true); 
+               }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
+                  <i className="fas fa-plus mr-2"></i> {t.newAssessment}
+               </button>
+             )}
           </div>
         </div>
       </header>
@@ -321,7 +351,7 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-10">
         {activeTab === 'ASSESSMENT' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            
+            {/* Assessment Filtering Bar */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between overflow-x-auto">
               <div className="flex items-center gap-6">
                 <span className="text-[11px] font-black uppercase text-indigo-600 whitespace-nowrap">{t.filterByMonth}</span>
@@ -341,29 +371,10 @@ const App: React.FC = () => {
                   {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-mail-bulk mr-2"></i>}
                   {t.genCollectiveEmail}
                 </button>
-                <label className="px-4 py-2 bg-slate-50 text-slate-500 rounded-xl text-[9px] font-black uppercase border border-slate-200 hover:bg-white transition-all cursor-pointer">
-                  <i className="fas fa-upload mr-2"></i> {t.importBackup}
-                  <input type="file" className="hidden" accept=".json" onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (event) => {
-                        try {
-                          const data = JSON.parse(event.target?.result as string);
-                          setAssessments(data);
-                          alert("恢复成功！");
-                        } catch (err) { alert("文件格式错误"); }
-                      };
-                      reader.readAsText(file);
-                    }
-                  }} />
-                </label>
-                <button onClick={() => { setIsSyncing(true); setTimeout(() => { setIsSyncing(false); alert("这是模拟同步过程。"); }, 1500); }} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[9px] font-black uppercase border border-emerald-100 hover:bg-emerald-100 transition-all">
-                  <i className="fas fa-cloud-arrow-up mr-2"></i> {t.pushCloud}
-                </button>
               </div>
             </div>
 
+            {/* Dashboard Visuals */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm min-h-[500px] flex flex-col">
                 <h3 className="text-sm font-black uppercase italic tracking-tighter mb-10 flex items-center gap-3">
@@ -429,6 +440,7 @@ const App: React.FC = () => {
               </div>
             </div>
 
+            {/* Assessment Records List */}
             <div className="space-y-6">
               {filteredGrouped.map(([month, data]) => (
                 <div key={month} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
@@ -441,25 +453,38 @@ const App: React.FC = () => {
                       <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
                         <tr>
                           <th className="px-8 py-6">{t.fwdName}</th>
-                          <th className="px-6 py-6 text-center">Frequency</th>
-                          <th className="px-6 py-6 text-center">Completeness</th>
-                          <th className="px-6 py-6 text-center">Standards</th>
-                          <th className="px-6 py-6 text-center">Email SLA</th>
+                          <th className="px-6 py-6 text-center">Metrics</th>
+                          <th className="px-6 py-6 text-center">{t.remarksLabel}</th>
                           <th className="px-8 py-6 text-right">Score</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {data.map((a, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/10 transition-colors group">
-                            <td className="px-8 py-6 font-bold text-slate-700">{a.company}</td>
-                            <td className="px-6 py-6 text-center"><span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.frequency)}`}>{a.frequency}</span></td>
-                            <td className="px-6 py-6 text-center"><span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.completeness)}`}>{a.completeness}</span></td>
-                            <td className="px-6 py-6 text-center"><span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.formatStandards)}`}>{a.formatStandards}</span></td>
-                            <td className="px-6 py-6 text-center"><span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getTagStyle(a.emailResponse)}`}>{a.emailResponse}</span></td>
+                            <td className="px-8 py-6">
+                                <div className="font-bold text-slate-700">{a.company}</div>
+                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mt-1">{a.evaluation}</div>
+                            </td>
+                            <td className="px-6 py-6">
+                                <div className="flex flex-wrap gap-1 justify-center max-w-[400px]">
+                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.frequency)}`}>FRQ: {a.frequency}</span>
+                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.completeness)}`}>CMP: {a.completeness}</span>
+                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.formatStandards)}`}>STD: {a.formatStandards}</span>
+                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.emailResponse)}`}>SLA: {a.emailResponse}</span>
+                                </div>
+                            </td>
+                            <td className="px-6 py-6 text-xs text-slate-500 italic max-w-md truncate">
+                                {a.remarks || "-"}
+                            </td>
                             <td className="px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-4">
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => { setEditingIndex({ month: a.month, company: a.company }); setNewEntry({...a}); setShowEntryModal(true); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><i className="fas fa-pen-to-square text-xs"></i></button>
+                                  <button onClick={() => { 
+                                    setIsAddingNewFwd(false);
+                                    setEditingIndex({ month: a.month, company: a.company }); 
+                                    setNewEntry({...a}); 
+                                    setShowEntryModal(true); 
+                                  }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><i className="fas fa-pen-to-square text-xs"></i></button>
                                   <button onClick={() => { if(confirm(t.deleteConfirm)) setAssessments(prev => prev.filter(x => !(x.month === a.month && x.company === a.company))); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><i className="fas fa-trash-can text-xs"></i></button>
                                 </div>
                                 <span className={`font-black text-lg w-8 text-right ${a.score >= 9 ? 'text-emerald-600' : a.score < 7 ? 'text-rose-600' : 'text-indigo-600'}`}>{a.score}</span>
@@ -477,30 +502,51 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'AUDIT' && (
-          <div className="animate-in fade-in duration-500">
+          <div className="animate-in fade-in duration-500 space-y-8">
             {logisticsRecords.length === 0 ? (
                <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
                   <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
                   <h2 className="text-2xl font-black text-slate-400 uppercase italic">Audit Workspace</h2>
-                  <p className="text-slate-400 mt-4 max-w-md mx-auto">Upload the 214 master file to generate automatic data quality reports.</p>
-                  <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
+                  <p className="text-slate-400 mt-4 max-w-md mx-auto">Upload the 214 master file. The system will filter out shipments with an Actual Delivery Date (ADD).</p>
+                  <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg">
                      <i className="fas fa-cloud-upload-alt"></i> {t.importData}
                      <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
                   </label>
                </div>
             ) : (
                <div className="space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
-                      <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{t.totalShipments}</div>
-                      <div className="text-4xl font-black text-indigo-600 mt-2 tracking-tighter">{logisticsRecords.length}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
+                      <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.totalShipments}</div>
+                      <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{pastDueRecords.length}</div>
                     </div>
-                    <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm">
-                      <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.overdueShipments}</div>
-                      <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{overdueCount}</div>
+                    
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm col-span-2 flex items-center px-8">
+                       <div className="flex flex-col flex-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.filterFwd}</label>
+                          <select 
+                            value={auditFilterFwd} 
+                            onChange={e => setAuditFilterFwd(e.target.value)}
+                            className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="ALL">{t.allFwd}</option>
+                            {auditFwdOptions.map(f => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                       </div>
+                       {auditFilterFwd !== 'ALL' && (
+                         <button 
+                            onClick={handleGenerateAggregatedEmail}
+                            disabled={isEmailLoading}
+                            className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
+                         >
+                           {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>}
+                           {t.genAggregatedEmail}
+                         </button>
+                       )}
                     </div>
-                    <div className="flex items-center justify-end px-4">
-                      <button onClick={() => setLogisticsRecords([])} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
+
+                    <div className="flex items-center justify-end">
+                      <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
                         <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
                       </button>
                     </div>
@@ -508,7 +554,10 @@ const App: React.FC = () => {
 
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                      <h2 className="text-xl font-black uppercase italic tracking-tight">{t.auditSummary}</h2>
+                      <h2 className="text-xl font-black uppercase italic tracking-tight">
+                        {auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}
+                      </h2>
+                      <span className="text-[10px] font-black text-slate-400 uppercase">Showing {displayAuditRecords.length} Shipments</span>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
@@ -516,42 +565,29 @@ const App: React.FC = () => {
                           <tr>
                             <th className="px-8 py-6">FWD</th>
                             <th className="px-6 py-6">HAWB</th>
-                            <th className="px-6 py-6">ETA (AT)</th>
-                            <th className="px-6 py-6">EDD (AY)</th>
+                            <th className="px-6 py-6">Origin</th>
+                            <th className="px-6 py-6">Dest</th>
+                            <th className="px-6 py-6 text-center">EDD (AY)</th>
                             <th className="px-6 py-6 text-center">Status</th>
-                            <th className="px-8 py-6 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {logisticsRecords.slice(0, 100).map((r, idx) => (
-                            <tr key={idx} className={`hover:bg-slate-50/10 transition-colors ${r.isOverdue ? 'bg-rose-50/20' : ''}`}>
+                          {displayAuditRecords.slice(0, 200).map((r, idx) => (
+                            <tr key={idx} className="hover:bg-rose-50/10 transition-colors bg-rose-50/5">
                               <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
                               <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
-                              <td className="px-6 py-6 text-xs text-slate-500">{r.etaDestination || '---'}</td>
-                              <td className="px-6 py-6 text-xs text-slate-500">{r.estimatedDeliveryDate || '---'}</td>
+                              <td className="px-6 py-6 text-xs text-slate-500">{r.origin}</td>
+                              <td className="px-6 py-6 text-xs text-slate-500">{r.destination}</td>
+                              <td className="px-6 py-6 text-center text-xs font-bold text-rose-500">{r.estimatedDeliveryDate}</td>
                               <td className="px-6 py-6 text-center">
-                                <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${r.isOverdue ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                                  {r.isOverdue ? 'Overdue' : 'On-Track'}
+                                <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase bg-rose-100 text-rose-600 animate-pulse">
+                                  Past Due
                                 </span>
-                              </td>
-                              <td className="px-8 py-6 text-right">
-                                {r.isOverdue && (
-                                  <button 
-                                    onClick={() => handleIndividualEmail(r.forwarderName, r.hawb)}
-                                    className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all text-xs"
-                                    title={t.genIndividualEmail}
-                                  >
-                                    <i className="fas fa-magic"></i>
-                                  </button>
-                                )}
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      {logisticsRecords.length > 100 && (
-                        <div className="p-8 text-center text-slate-400 text-[10px] font-bold uppercase">Showing top 100 records for performance</div>
-                      )}
                     </div>
                   </div>
                </div>
@@ -560,19 +596,124 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Entry Modal */}
+      {showEntryModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in zoom-in duration-300">
+           <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden p-10 relative">
+              <button onClick={() => { setShowEntryModal(false); setEditingIndex(null); }} className="absolute top-8 right-8 text-slate-300 hover:text-rose-500 transition-all"><i className="fas fa-times text-2xl"></i></button>
+              <h2 className="text-2xl font-black uppercase italic mb-8">{editingIndex ? t.editAssessment : t.newAssessment}</h2>
+              <div className="grid grid-cols-2 gap-6">
+                 <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.monthPeriod}</label>
+                    <input type="month" disabled={!!editingIndex} value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold" />
+                 </div>
+                 
+                 <div className="space-y-1 relative">
+                    <div className="flex items-center justify-between mb-2">
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.fwdName}</label>
+                       {!editingIndex && (
+                         <button 
+                          onClick={() => setIsAddingNewFwd(!isAddingNewFwd)}
+                          className="text-[9px] font-black text-indigo-600 uppercase hover:text-indigo-800"
+                         >
+                           {isAddingNewFwd ? "Select existing" : t.addNewFwd}
+                         </button>
+                       )}
+                    </div>
+                    {isAddingNewFwd ? (
+                      <input 
+                        type="text" 
+                        placeholder="Type FWD Name..."
+                        value={customFwdName} 
+                        onChange={e => {
+                          setCustomFwdName(e.target.value);
+                          setNewEntry({...newEntry, company: e.target.value});
+                        }} 
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
+                      />
+                    ) : (
+                      <select 
+                        disabled={!!editingIndex} 
+                        value={newEntry.company} 
+                        onChange={e => setNewEntry({...newEntry, company: e.target.value})} 
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500"
+                      >
+                         <option value="">{t.selectFwd}</option>
+                         {dynamicFwdList.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    )}
+                 </div>
+
+                 {[
+                    { key: 'frequency', opts: ['High', 'Medium', 'Low'] },
+                    { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] },
+                    { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] },
+                    { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }
+                 ].map(field => (
+                    <div key={field.key} className="space-y-1">
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{field.key.toUpperCase()}</label>
+                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
+                          {field.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                       </select>
+                    </div>
+                 ))}
+
+                 <div className="col-span-2 space-y-1 mt-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.remarksLabel}</label>
+                    <textarea 
+                        rows={3}
+                        value={newEntry.remarks}
+                        placeholder={t.remarksPlaceholder}
+                        onChange={e => setNewEntry({...newEntry, remarks: e.target.value})}
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500 resize-none"
+                    />
+                 </div>
+              </div>
+
+              <div className="mt-8 p-6 bg-indigo-50 rounded-2xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div>
+                  <div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div>
+                </div>
+                <div className="text-right">
+                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Rank</div>
+                   <div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>{newEntry.evaluation}</div>
+                </div>
+              </div>
+
+              <button onClick={() => {
+                if (!newEntry.company) {
+                  alert("Please specify a Forwarder Name.");
+                  return;
+                }
+                if (editingIndex) {
+                  setAssessments(prev => prev.map(a => (a.month === editingIndex.month && a.company === editingIndex.company) ? newEntry : a));
+                } else {
+                  setAssessments(prev => [newEntry, ...prev]);
+                }
+                setShowEntryModal(false);
+                setEditingIndex(null);
+                setCustomFwdName('');
+              }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
+                {editingIndex ? t.updateRecord : t.finalize}
+              </button>
+           </div>
+        </div>
+      )}
+
       {/* 邮件预览模态框 */}
       {showEmailModal && (
         <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-indigo-600 text-white">
                  <div>
-                    <h2 className="text-xl font-black uppercase italic tracking-tight">{t.collectiveEmailTitle}</h2>
-                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">AI Generated • Corsair Logistics SOP Compliance</p>
+                    <h2 className="text-xl font-black uppercase italic tracking-tight">Draft Preview</h2>
+                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">AI Aggregated Content (FTP Upload Data)</p>
                  </div>
                  <button onClick={() => setShowEmailModal(false)} className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"><i className="fas fa-times text-xl"></i></button>
               </div>
               <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
-                 <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-600 whitespace-pre-wrap font-serif">
+                 <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-700 whitespace-pre-wrap font-serif">
                     {collectiveEmail}
                  </div>
               </div>
@@ -591,64 +732,8 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {showEntryModal && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in zoom-in duration-300">
-           <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden p-10 relative">
-              <button onClick={() => { setShowEntryModal(false); setEditingIndex(null); }} className="absolute top-8 right-8 text-slate-300 hover:text-rose-500 transition-all"><i className="fas fa-times text-2xl"></i></button>
-              <h2 className="text-2xl font-black uppercase italic mb-8">{editingIndex ? t.editAssessment : t.newAssessment}</h2>
-              <div className="grid grid-cols-2 gap-6">
-                 <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.monthPeriod}</label>
-                    <input type="month" disabled={!!editingIndex} value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold" />
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.fwdName}</label>
-                    <select disabled={!!editingIndex} value={newEntry.company} onChange={e => setNewEntry({...newEntry, company: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
-                       <option value="">{t.selectFwd}</option>
-                       {FORWARDER_LIST.map(f => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                 </div>
-                 {[
-                    { key: 'frequency', opts: ['High', 'Medium', 'Low'] },
-                    { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] },
-                    { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] },
-                    { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }
-                 ].map(field => (
-                    <div key={field.key} className="space-y-1">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{field.key.toUpperCase()}</label>
-                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
-                          {field.opts.map(o => <option key={o} value={o}>{o}</option>)}
-                       </select>
-                    </div>
-                 ))}
-              </div>
-              <div className="mt-8 p-6 bg-indigo-50 rounded-2xl flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div>
-                  <div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div>
-                </div>
-                <div className="text-right">
-                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Rank</div>
-                   <div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>{newEntry.evaluation}</div>
-                </div>
-              </div>
-              <button onClick={() => {
-                if (editingIndex) {
-                  setAssessments(prev => prev.map(a => (a.month === editingIndex.month && a.company === editingIndex.company) ? newEntry : a));
-                } else {
-                  setAssessments(prev => [newEntry, ...prev]);
-                }
-                setShowEntryModal(false);
-                setEditingIndex(null);
-              }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
-                {editingIndex ? t.updateRecord : t.finalize}
-              </button>
-           </div>
-        </div>
-      )}
-
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Data Hub v6.0 // Backup Mechanism: JSON-Manual
+        Corsair Data Intelligence v8.0 // FTP Upload Status: Managed
       </footer>
     </div>
   );
