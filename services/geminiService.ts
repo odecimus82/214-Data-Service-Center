@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { LogisticsRecord } from "../types";
+import { LogisticsRecord, ForwarderAssessment } from "../types";
 
 const getAIInstance = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -27,6 +27,58 @@ export const generateExplanationEmail = async (fwdName: string, records: Logisti
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
+    contents: prompt,
+  });
+
+  return response.text;
+};
+
+/**
+ * 优化：生成全员绩效反馈邮件 (不包含具体名称和数量)
+ */
+export const generateCollectiveFeedbackEmail = async (month: string, assessments: ForwarderAssessment[]) => {
+  const ai = getAIInstance();
+  
+  // 提供汇总数据供 AI 分析共性，但告知其不要在正文中列出
+  const summaryMetrics = {
+    avgScore: assessments.reduce((acc, curr) => acc + curr.score, 0) / assessments.length,
+    lowFreqCount: assessments.filter(a => a.frequency !== 'High').length,
+    formatIssues: assessments.filter(a => a.formatStandards !== 'Compliant').length,
+    completenessIssues: assessments.filter(a => a.completeness !== 'Excellent').length,
+    emailLatencyCount: assessments.filter(a => a.emailResponse.includes('>')).length
+  };
+
+  const prompt = `
+    Sender: Corsair Logistics Management Team
+    Target Audience: All Logistics Partners (BCC Group Email)
+    Current Review Month: ${month}
+    General Performance Trends (FOR AI ANALYSIS ONLY, DO NOT LIST IN EMAIL):
+    ${JSON.stringify(summaryMetrics, null, 2)}
+
+    Task: Write a highly professional collective performance feedback email for Corsair's global forwarder pool.
+    
+    STRICT CONSTRAINTS (MANDATORY):
+    1. DO NOT mention any specific company names (e.g., THI, AGS, Schneider etc.).
+    2. DO NOT mention the total count of forwarders or specific quantity statistics.
+    3. Use a "Pool Performance" perspective.
+    4. Focus on general technical gaps and compliance.
+
+    Content Structure:
+    1. Opening: Corsair's commitment to supply chain visibility and data-driven logistics management.
+    2. Data Integrity Observation: 
+       - Discuss EDI 214 status frequency and why daily updates (High Frequency) are critical for Corsair's end-to-end planning.
+       - Highlight common gaps in milestone completeness (especially missing actual delivery timestamps).
+       - Standardization: Mention the need for strict adherence to ISO timestamp formats and milestone naming conventions (Corsair SOP).
+    3. Communication SLA: Reiterate the requirement for email response times (Urgent vs Standard).
+    4. Closing: Instruct each partner to check their INDIVIDUAL scorecard (sent separately) for specific improvement items.
+
+    Language: Professional Dual-Language (English followed by Chinese).
+    Terminology: Status 214, EDI Latency, Milestone Consistency, Field Integrity, SLA Compliance, Visibility, Corsair Logistics SOP.
+    Tone: Sophisticated, authoritative, but partnership-oriented.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
     contents: prompt,
   });
 
@@ -61,7 +113,6 @@ export const analyzeLogisticsData = async (records: LogisticsRecord[]) => {
 
 export const chatWithLogisticsData = async (query: string, records: LogisticsRecord[]) => {
   const ai = getAIInstance();
-  // 只传递核心数据以节省 token 并提高准确性
   const compactData = records.slice(0, 50).map(r => ({
     fwd: r.forwarderName,
     hawb: r.hawb,

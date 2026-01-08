@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { LogisticsRecord, ForwarderAssessment, ServiceStandard } from './types';
-import { analyzeLogisticsData } from './services/geminiService';
+import { analyzeLogisticsData, generateCollectiveFeedbackEmail } from './services/geminiService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Cell
@@ -33,8 +33,13 @@ const TRANSLATIONS = {
     viewDetails: "Expand",
     hideDetails: "Collapse",
     syncing: "Syncing...",
-    synced: "Cloud Synced",
-    pushCloud: "Push to Vercel"
+    synced: "Local DB Ready",
+    pushCloud: "Push to Vercel",
+    exportData: "Export Backup",
+    importBackup: "Import Backup",
+    genCollectiveEmail: "Group Feedback Email",
+    copySuccess: "Copied to clipboard!",
+    collectiveEmailTitle: "Monthly Partner Performance Review"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -61,8 +66,13 @@ const TRANSLATIONS = {
     viewDetails: "展开",
     hideDetails: "收起",
     syncing: "同步中...",
-    synced: "云端已就绪",
-    pushCloud: "同步到 Vercel"
+    synced: "本地已就绪",
+    pushCloud: "同步到 Vercel",
+    exportData: "导出备份",
+    importBackup: "恢复备份",
+    genCollectiveEmail: "生成全员反馈邮件",
+    copySuccess: "内容已复制到剪贴板",
+    collectiveEmailTitle: "月度合作伙伴绩效回顾"
   }
 };
 
@@ -75,7 +85,6 @@ const SERVICE_STANDARDS: ServiceStandard[] = [
 
 const FORWARDER_LIST = ["THI", "AGS", "Dimerco", "DP World", "JAS Forwarding", "Kuehne+Nagel", "Pegasus Forwarding", "Scan Global Logistics", "Schneider", "Speedmark"];
 
-// 完整录入 2025-11 的 10 条数据
 const INITIAL_ASSESSMENTS: ForwarderAssessment[] = [
   { month: '2025-11', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10 },
   { month: '2025-11', company: 'AGS', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Good', score: 8.5 },
@@ -98,9 +107,13 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
+  // 邮件预览状态
+  const [collectiveEmail, setCollectiveEmail] = useState<string>('');
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    // 升级版本号到 v5 以确保录入的数据生效
-    const saved = localStorage.getItem('fwd_assessments_cloud_v5');
+    const saved = localStorage.getItem('fwd_assessments_cloud_v6');
     return saved ? (JSON.parse(saved) as ForwarderAssessment[]) : INITIAL_ASSESSMENTS;
   });
 
@@ -116,7 +129,7 @@ const App: React.FC = () => {
   }, [availableMonths]);
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v5', JSON.stringify(assessments));
+    localStorage.setItem('fwd_assessments_cloud_v6', JSON.stringify(assessments));
     setIsSyncing(true);
     const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
@@ -129,26 +142,20 @@ const App: React.FC = () => {
     company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10
   });
 
-  // 核心评分逻辑 (包含格式规范权重)
   useEffect(() => {
     let base = 4.0;
     if (newEntry.frequency === 'High') base += 1.5;
     else if (newEntry.frequency === 'Medium') base += 0.5;
-    
     if (newEntry.completeness === 'Excellent') base += 1.5;
     else if (newEntry.completeness === 'Good') base += 0.5;
-
     if (newEntry.formatStandards === 'Compliant') base += 1.5;
     else if (newEntry.formatStandards === 'Basically Compliant') base += 0.5;
-
     if (newEntry.emailResponse === '≤2 hours') base += 1.5;
     else if (newEntry.emailResponse === '≤4 hours') base += 0.5;
-    
     const finalScore = Math.min(10, base);
     let evalStr = "Fair";
     if (finalScore >= 9) evalStr = "Excellent";
     else if (finalScore >= 8) evalStr = "Good";
-
     setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
   }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
 
@@ -171,16 +178,30 @@ const App: React.FC = () => {
     }
   };
 
-  const filteredGrouped = useMemo(() => {
-    const groups: { [key: string]: ForwarderAssessment[] } = {};
-    assessments.forEach(a => {
-      if (matrixFilterMonth === 'ALL' || a.month === matrixFilterMonth) {
-        if (!groups[a.month]) groups[a.month] = [];
-        groups[a.month].push(a);
-      }
-    });
-    return Object.entries(groups).sort((a: [string, any], b: [string, any]) => b[0].localeCompare(a[0]));
-  }, [assessments, matrixFilterMonth]);
+  const handleGenerateCollectiveEmail = async () => {
+    setIsEmailLoading(true);
+    try {
+      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
+      const currentData = assessments.filter(a => a.month === currentMonth);
+      const emailContent = await generateCollectiveFeedbackEmail(currentMonth, currentData);
+      setCollectiveEmail(emailContent);
+      setShowEmailModal(true);
+    } catch (e) {
+      alert("AI Generation failed.");
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
+
+  const exportBackup = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(assessments));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `214_Data_Backup_${new Date().toISOString().slice(0,10)}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
 
   const dashboardData = useMemo(() => {
     const relevant = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
@@ -191,6 +212,16 @@ const App: React.FC = () => {
       scores[a.company].count++;
     });
     return Object.entries(scores).map(([name, d]) => ({ name, score: parseFloat((d.sum / d.count).toFixed(2)) })).sort((a, b) => b.score - a.score);
+  }, [assessments, matrixFilterMonth]);
+
+  const filteredGrouped = useMemo(() => {
+    const filtered = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
+    const groups: { [key: string]: ForwarderAssessment[] } = {};
+    filtered.forEach(a => {
+      if (!groups[a.month]) groups[a.month] = [];
+      groups[a.month].push(a);
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   }, [assessments, matrixFilterMonth]);
 
   const getTagStyle = (text: string) => {
@@ -204,15 +235,15 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-indigo-200 shadow-lg">
               <i className="fas fa-database"></i>
             </div>
             <div>
-              <h1 className="font-black text-xl tracking-tight uppercase italic">{t.auditTitle}</h1>
-              <div className="flex items-center gap-2">
+              <h1 className="font-black text-xl tracking-tight uppercase italic leading-none">{t.auditTitle}</h1>
+              <div className="flex items-center gap-2 mt-1">
                 <span className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`}></span>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                   {isSyncing ? t.syncing : t.synced}
@@ -231,6 +262,9 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex gap-4">
+             <button onClick={exportBackup} className="px-4 py-2 bg-slate-50 text-slate-500 rounded-lg text-[10px] font-black uppercase border border-slate-200 hover:bg-white transition-all">
+                <i className="fas fa-download mr-2"></i> {t.exportData}
+             </button>
              <button onClick={() => setLang(lang === 'EN' ? 'CN' : 'EN')} className="px-4 py-2 border border-slate-200 rounded-lg text-[10px] font-black uppercase hover:bg-white transition-all">
                 {t.switchLang}
              </button>
@@ -255,9 +289,36 @@ const App: React.FC = () => {
                   ))}
                 </div>
               </div>
-              <button onClick={() => { setIsSyncing(true); setTimeout(() => setIsSyncing(false), 2000); }} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[9px] font-black uppercase border border-emerald-100 hover:bg-emerald-100 transition-all">
-                <i className="fas fa-cloud-arrow-up mr-2"></i> {t.pushCloud}
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleGenerateCollectiveEmail}
+                  disabled={isEmailLoading}
+                  className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase border border-indigo-100 hover:bg-indigo-100 transition-all"
+                >
+                  {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-mail-bulk mr-2"></i>}
+                  {t.genCollectiveEmail}
+                </button>
+                <label className="px-4 py-2 bg-slate-50 text-slate-500 rounded-xl text-[9px] font-black uppercase border border-slate-200 hover:bg-white transition-all cursor-pointer">
+                  <i className="fas fa-upload mr-2"></i> {t.importBackup}
+                  <input type="file" className="hidden" accept=".json" onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        try {
+                          const data = JSON.parse(event.target?.result as string);
+                          setAssessments(data);
+                          alert("恢复成功！");
+                        } catch (err) { alert("文件格式错误"); }
+                      };
+                      reader.readAsText(file);
+                    }
+                  }} />
+                </label>
+                <button onClick={() => { setIsSyncing(true); setTimeout(() => { setIsSyncing(false); alert("这是模拟同步过程。"); }, 1500); }} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-[9px] font-black uppercase border border-emerald-100 hover:bg-emerald-100 transition-all">
+                  <i className="fas fa-cloud-arrow-up mr-2"></i> {t.pushCloud}
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -293,7 +354,7 @@ const App: React.FC = () => {
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-center">
-                       <p className="text-[10px] font-bold text-indigo-300 uppercase italic opacity-60">Ready to analyze 10 forwarders</p>
+                       <p className="text-[10px] font-bold text-indigo-300 uppercase italic opacity-60">Ready to analyze performance</p>
                        <button 
                         onClick={generateAIInsight}
                         disabled={isAiLoading}
@@ -385,6 +446,37 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* 全员邮件预览模态框 */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-indigo-600 text-white">
+                 <div>
+                    <h2 className="text-xl font-black uppercase italic tracking-tight">{t.collectiveEmailTitle}</h2>
+                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">AI Generated • Corsair Logistics SOP Compliance</p>
+                 </div>
+                 <button onClick={() => setShowEmailModal(false)} className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"><i className="fas fa-times text-xl"></i></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
+                 <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-600 whitespace-pre-wrap font-serif">
+                    {collectiveEmail}
+                 </div>
+              </div>
+              <div className="px-10 py-8 border-t border-slate-100 flex justify-end gap-4 bg-white">
+                 <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(collectiveEmail);
+                    alert(t.copySuccess);
+                  }}
+                  className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                 >
+                   <i className="fas fa-copy mr-2"></i> Copy Content
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {showEntryModal && (
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in zoom-in duration-300">
            <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden p-10 relative">
@@ -442,7 +534,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Data Hub v5.0 // Cloud Persistence: Active
+        Data Hub v6.0 // Backup Mechanism: JSON-Manual
       </footer>
     </div>
   );
