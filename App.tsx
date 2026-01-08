@@ -66,7 +66,8 @@ const TRANSLATIONS = {
     activateAI: "Activate AI Engine",
     keyRequired: "API Key Selection Required",
     keyDesc: "To enable AI features, please authorize your key or ensure the environment variable API_KEY is set in Vercel.",
-    vercelConfig: "Vercel Configuration Alert: Please add API_KEY to your project's Environment Variables."
+    vercelConfig: "Vercel Configuration Alert: Please add API_KEY to your project's Environment Variables.",
+    exportAssessment: "Export Scores (CSV)"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -120,7 +121,8 @@ const TRANSLATIONS = {
     activateAI: "激活 AI 引擎",
     keyRequired: "需要授权 API 密钥",
     keyDesc: "为了使用 AI 自动生成邮件和报告，请授权 API 密钥或确保 Vercel 环境变量中已配置 API_KEY。",
-    vercelConfig: "Vercel 配置提示：请在 Vercel 项目设置的 Environment Variables 中添加 API_KEY。"
+    vercelConfig: "Vercel 配置提示：请在 Vercel 项目设置的 Environment Variables 中添加 API_KEY。",
+    exportAssessment: "导出评分数据"
   }
 };
 
@@ -155,9 +157,7 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
-  // 改进的 API Key 检查逻辑
   const [isApiKeySelected, setIsApiKeySelected] = useState(() => {
-    // 优先检查环境变量
     return !!process.env.API_KEY;
   });
 
@@ -192,23 +192,17 @@ const App: React.FC = () => {
   const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
   const [customFwdName, setCustomFwdName] = useState('');
 
-  // 挂载时检查 AI Studio Key
   useEffect(() => {
     const checkKey = async () => {
-      // 如果已经有环境变量，跳过检查
       if (process.env.API_KEY) {
         setIsApiKeySelected(true);
         return;
       }
-      
       // @ts-ignore
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         // @ts-ignore
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setIsApiKeySelected(hasKey);
-      } else {
-        // 在 Vercel 部署模式下，如果也没有环境变量，则 setIsApiKeySelected 会保持 false 触发激活界面
-        setIsApiKeySelected(!!process.env.API_KEY);
       }
     };
     checkKey();
@@ -221,7 +215,6 @@ const App: React.FC = () => {
       await window.aistudio.openSelectKey();
       setIsApiKeySelected(true);
     } else {
-      // 如果不在 AI Studio 中，引导用户去 Vercel 配置
       alert(t.vercelConfig);
     }
   };
@@ -289,10 +282,46 @@ const App: React.FC = () => {
     console.error(e);
     const msg = e.message || "";
     if (msg.includes("API Key") || msg.includes("set when running in a browser")) {
-      setIsApiKeySelected(false); // 回到激活界面
+      setIsApiKeySelected(false);
     } else {
       alert(`AI Error: ${msg}`);
     }
+  };
+
+  const handleExportAssessments = () => {
+    const dataToExport = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
+    if (dataToExport.length === 0) {
+      alert("No data to export.");
+      return;
+    }
+
+    const headers = ["Month", "Company", "Frequency", "Completeness", "Standards", "EmailResponse", "Evaluation", "Score", "Remarks"];
+    const csvContent = [
+      headers.join(","),
+      ...dataToExport.map(a => {
+        return [
+          a.month,
+          `"${a.company}"`,
+          a.frequency,
+          a.completeness,
+          a.formatStandards,
+          a.emailResponse,
+          a.evaluation,
+          a.score,
+          `"${(a.remarks || "").replace(/"/g, '""')}"`
+        ].join(",");
+      })
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Assessments_${matrixFilterMonth === 'ALL' ? 'All_History' : matrixFilterMonth}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
@@ -427,7 +456,6 @@ const App: React.FC = () => {
     setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
   }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
 
-  // 如果没有 API Key 也没有环境变量，显示激活屏幕
   if (!isApiKeySelected && !process.env.API_KEY) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
@@ -515,6 +543,12 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2">
+                <button 
+                  onClick={handleExportAssessments}
+                  className="px-4 py-2 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl text-[9px] font-black uppercase hover:bg-slate-100 transition-all shadow-sm"
+                >
+                  <i className="fas fa-file-export mr-2"></i> {t.exportAssessment}
+                </button>
                 <button 
                   onClick={() => {
                     setEditingIndex(null);
