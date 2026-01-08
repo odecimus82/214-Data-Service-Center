@@ -65,7 +65,8 @@ const TRANSLATIONS = {
     newEddDate: "Revised EDD (YYYY-MM-DD)",
     activateAI: "Activate AI Engine",
     keyRequired: "API Key Selection Required",
-    keyDesc: "Please select a paid API key to enable AI-powered auditing and email generation."
+    keyDesc: "To enable AI features, please authorize your key or ensure the environment variable API_KEY is set in Vercel.",
+    vercelConfig: "Vercel Configuration Alert: Please add API_KEY to your project's Environment Variables."
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -118,7 +119,8 @@ const TRANSLATIONS = {
     newEddDate: "修正后的 EDD (YYYY-MM-DD)",
     activateAI: "激活 AI 引擎",
     keyRequired: "需要授权 API 密钥",
-    keyDesc: "为了使用 AI 自动生成邮件和报告，请授权或选择您的 API 密钥。"
+    keyDesc: "为了使用 AI 自动生成邮件和报告，请授权 API 密钥或确保 Vercel 环境变量中已配置 API_KEY。",
+    vercelConfig: "Vercel 配置提示：请在 Vercel 项目设置的 Environment Variables 中添加 API_KEY。"
   }
 };
 
@@ -153,9 +155,12 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
-  // API Key Guard
-  const [isApiKeySelected, setIsApiKeySelected] = useState(true); // Default to true to check on mount
-  
+  // 改进的 API Key 检查逻辑
+  const [isApiKeySelected, setIsApiKeySelected] = useState(() => {
+    // 优先检查环境变量
+    return !!process.env.API_KEY;
+  });
+
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('corsair_admin_auth') === 'true');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState(false);
@@ -170,7 +175,7 @@ const App: React.FC = () => {
   const [showEmailModal, setShowEmailModal] = useState(false);
 
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v12');
+    const saved = localStorage.getItem('fwd_assessments_cloud_v14');
     if (saved) {
       const parsed = JSON.parse(saved) as ForwarderAssessment[];
       return parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
@@ -178,21 +183,46 @@ const App: React.FC = () => {
     return INITIAL_ASSESSMENTS;
   });
 
-  // Check for API Key on mount
+  const [showEntryModal, setShowEntryModal] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
+  const [newEntry, setNewEntry] = useState<ForwarderAssessment>({
+    month: new Date().toISOString().substring(0, 7),
+    company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
+  });
+  const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
+  const [customFwdName, setCustomFwdName] = useState('');
+
+  // 挂载时检查 AI Studio Key
   useEffect(() => {
     const checkKey = async () => {
+      // 如果已经有环境变量，跳过检查
+      if (process.env.API_KEY) {
+        setIsApiKeySelected(true);
+        return;
+      }
+      
+      // @ts-ignore
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        // @ts-ignore
         const hasKey = await window.aistudio.hasSelectedApiKey();
         setIsApiKeySelected(hasKey);
+      } else {
+        // 在 Vercel 部署模式下，如果也没有环境变量，则 setIsApiKeySelected 会保持 false 触发激活界面
+        setIsApiKeySelected(!!process.env.API_KEY);
       }
     };
     checkKey();
   }, []);
 
   const handleOpenKeySelector = async () => {
+    // @ts-ignore
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      // @ts-ignore
       await window.aistudio.openSelectKey();
-      setIsApiKeySelected(true); // Assume success per instructions
+      setIsApiKeySelected(true);
+    } else {
+      // 如果不在 AI Studio 中，引导用户去 Vercel 配置
+      alert(t.vercelConfig);
     }
   };
 
@@ -215,7 +245,7 @@ const App: React.FC = () => {
   }, [availableMonths, matrixFilterMonth]);
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v12', JSON.stringify(assessments));
+    localStorage.setItem('fwd_assessments_cloud_v14', JSON.stringify(assessments));
     setIsSyncing(true);
     const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
@@ -255,6 +285,16 @@ const App: React.FC = () => {
     return Object.entries(summary).sort((a, b) => b[1].length - a[1].length);
   }, [pastDueRecords]);
 
+  const handleError = (e: any) => {
+    console.error(e);
+    const msg = e.message || "";
+    if (msg.includes("API Key") || msg.includes("set when running in a browser")) {
+      setIsApiKeySelected(false); // 回到激活界面
+    } else {
+      alert(`AI Error: ${msg}`);
+    }
+  };
+
   const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
     setIsEmailLoading(true);
     try {
@@ -262,12 +302,7 @@ const App: React.FC = () => {
       setCollectiveEmail(content);
       setShowEmailModal(true);
     } catch (e: any) {
-      console.error(e);
-      if (e.message?.includes("API Key")) {
-        handleOpenKeySelector();
-      } else {
-        alert(`AI Generation Error: ${e.message || 'Unknown'}`);
-      }
+      handleError(e);
     } finally {
       setIsEmailLoading(false);
     }
@@ -282,12 +317,7 @@ const App: React.FC = () => {
       setCollectiveEmail(emailContent);
       setShowEmailModal(true);
     } catch (e: any) {
-      console.error(e);
-      if (e.message?.includes("API Key")) {
-        handleOpenKeySelector();
-      } else {
-        alert(`AI Error: ${e.message}`);
-      }
+      handleError(e);
     } finally {
       setIsEmailLoading(false);
     }
@@ -306,9 +336,8 @@ const App: React.FC = () => {
       const report = await analyzeLogisticsData(mockRecords);
       setAiAnalysis(report);
     } catch (e: any) {
-      console.error(e);
-      setAiAnalysis(`Error: ${e.message || 'Unauthorized access'}.`);
-      if (e.message?.includes("API Key")) handleOpenKeySelector();
+      handleError(e);
+      setAiAnalysis(`Unauthorized: Please activate AI Engine.`);
     } finally {
       setIsAiLoading(false);
     }
@@ -371,15 +400,6 @@ const App: React.FC = () => {
     return 'text-slate-500 bg-slate-50';
   };
 
-  const [showEntryModal, setShowEntryModal] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
-  const [newEntry, setNewEntry] = useState<ForwarderAssessment>({
-    month: new Date().toISOString().substring(0, 7),
-    company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
-  });
-  const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
-  const [customFwdName, setCustomFwdName] = useState('');
-
   const auditFwdOptions = useMemo(() => {
     const fwds = new Set(pastDueRecords.map(r => r.forwarderName));
     return Array.from(fwds).sort();
@@ -407,8 +427,8 @@ const App: React.FC = () => {
     setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
   }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
 
-  // If no API key is selected, show activation screen
-  if (!isApiKeySelected) {
+  // 如果没有 API Key 也没有环境变量，显示激活屏幕
+  if (!isApiKeySelected && !process.env.API_KEY) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
         <div className="max-w-md w-full bg-slate-800 rounded-[3rem] p-12 text-center border border-slate-700 shadow-2xl animate-in zoom-in duration-500">
@@ -424,9 +444,17 @@ const App: React.FC = () => {
           >
             <i className="fas fa-key"></i> {t.activateAI}
           </button>
-          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="mt-8 inline-block text-[10px] font-bold text-slate-500 uppercase hover:text-indigo-400 transition-colors tracking-widest border-b border-slate-700 pb-1">
-            Gemini Billing & Project Docs
-          </a>
+          
+          <div className="mt-8 pt-8 border-t border-slate-700">
+             <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="inline-block text-[9px] font-bold text-slate-500 uppercase hover:text-indigo-400 transition-colors tracking-widest mb-4">
+               Gemini Billing & Project Docs
+             </a>
+             <div className="bg-slate-900/50 p-4 rounded-xl text-left border border-slate-700/50">
+                <p className="text-[8px] font-mono text-indigo-300 leading-normal opacity-70">
+                   If you are seeing this on a standalone domain (e.g. Vercel), ensure you have added the 'API_KEY' Environment Variable in your dashboard.
+                </p>
+             </div>
+          </div>
         </div>
       </div>
     );
@@ -487,6 +515,19 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    setEditingIndex(null);
+                    setNewEntry({
+                      month: availableMonths[0] || new Date().toISOString().substring(0, 7),
+                      company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
+                    });
+                    setShowEntryModal(true);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase hover:bg-emerald-700 transition-all shadow-md"
+                >
+                  <i className="fas fa-plus mr-2"></i> {t.newAssessment}
+                </button>
                 <button 
                   onClick={handleGenerateCollectiveEmail}
                   disabled={isEmailLoading}
@@ -820,6 +861,111 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Entry Modal */}
+      {showEntryModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in zoom-in duration-300">
+           <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden p-10 relative">
+              <button onClick={() => { setShowEntryModal(false); setEditingIndex(null); }} className="absolute top-8 right-8 text-slate-300 hover:text-rose-500 transition-all"><i className="fas fa-times text-2xl"></i></button>
+              <h2 className="text-2xl font-black uppercase italic mb-8">{editingIndex ? t.editAssessment : t.newAssessment}</h2>
+              <div className="grid grid-cols-2 gap-6">
+                 <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.monthPeriod}</label>
+                    <input type="month" disabled={!!editingIndex} value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold" />
+                 </div>
+                 
+                 <div className="space-y-1 relative">
+                    <div className="flex items-center justify-between mb-2">
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.fwdName}</label>
+                       {!editingIndex && (
+                         <button 
+                          onClick={() => setIsAddingNewFwd(!isAddingNewFwd)}
+                          className="text-[9px] font-black text-indigo-600 uppercase hover:text-indigo-800"
+                         >
+                           {isAddingNewFwd ? "Select existing" : t.addNewFwd}
+                         </button>
+                       )}
+                    </div>
+                    {isAddingNewFwd ? (
+                      <input 
+                        type="text" 
+                        placeholder="Type FWD Name..."
+                        value={customFwdName} 
+                        onChange={e => {
+                          setCustomFwdName(e.target.value);
+                          setNewEntry({...newEntry, company: e.target.value});
+                        }} 
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
+                      />
+                    ) : (
+                      <select 
+                        disabled={!!editingIndex} 
+                        value={newEntry.company} 
+                        onChange={e => setNewEntry({...newEntry, company: e.target.value})} 
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500"
+                      >
+                         <option value="">{t.selectFwd}</option>
+                         {dynamicFwdList.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    )}
+                 </div>
+
+                 {[
+                    { key: 'frequency', opts: ['High', 'Medium', 'Low'] },
+                    { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] },
+                    { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] },
+                    { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }
+                 ].map(field => (
+                    <div key={field.key} className="space-y-1">
+                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{field.key.toUpperCase()}</label>
+                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
+                          {field.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                       </select>
+                    </div>
+                 ))}
+
+                 <div className="col-span-2 space-y-1 mt-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.remarksLabel}</label>
+                    <textarea 
+                        rows={3}
+                        value={newEntry.remarks}
+                        placeholder={t.remarksPlaceholder}
+                        onChange={e => setNewEntry({...newEntry, remarks: e.target.value})}
+                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500 resize-none"
+                    />
+                 </div>
+              </div>
+
+              <div className="mt-8 p-6 bg-indigo-50 rounded-2xl flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div>
+                  <div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div>
+                </div>
+                <div className="text-right">
+                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Rank</div>
+                   <div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>{newEntry.evaluation}</div>
+                </div>
+              </div>
+
+              <button onClick={() => {
+                if (!newEntry.company) {
+                  alert("Please specify a Forwarder Name.");
+                  return;
+                }
+                if (editingIndex) {
+                  setAssessments(prev => prev.map(a => (a.month === editingIndex.month && a.company === editingIndex.company) ? newEntry : a));
+                } else {
+                  setAssessments(prev => [newEntry, ...prev]);
+                }
+                setShowEntryModal(false);
+                setEditingIndex(null);
+                setCustomFwdName('');
+              }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
+                {editingIndex ? t.updateRecord : t.finalize}
+              </button>
+           </div>
+        </div>
+      )}
+
       {showEmailModal && (
         <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -851,7 +997,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v13.0 // Key Selection Enabled
+        Corsair Data Intelligence v15.0 // Deployment Ready
       </footer>
     </div>
   );
