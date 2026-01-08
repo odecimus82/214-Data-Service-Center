@@ -8,9 +8,24 @@ import {
   Cell
 } from 'recharts';
 
-const ADMIN_CREDENTIALS = {
-  username: 'rhodes',
-  password: '102410'
+// Firebase Imports
+// @ts-ignore
+import { initializeApp } from 'firebase/app';
+// @ts-ignore
+import { getFirestore, collection, getDocs, setDoc, doc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+
+/**
+ * 注意：在生产环境下，你应该在 Google Cloud 控制台创建一个 Firebase 项目
+ * 并将以下配置替换为你自己的配置。
+ * 如果没有配置，应用将退回到 localStorage 模式。
+ */
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSy...", // 建议通过环境变量注入
+  authDomain: "corsair-logistics.firebaseapp.com",
+  projectId: "corsair-logistics",
+  storageBucket: "corsair-logistics.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef"
 };
 
 const TRANSLATIONS = {
@@ -30,14 +45,14 @@ const TRANSLATIONS = {
     scoreLabel: "Auto Score",
     finalize: "Save to Cloud",
     updateRecord: "Update Record",
-    deleteConfirm: "Confirm deletion?",
+    deleteConfirm: "Confirm deletion from Cloud?",
     selectFwd: "Select Forwarder...",
     switchLang: "中文",
     filterByMonth: "Timeline:",
     allMonths: "All History",
-    syncing: "Syncing...",
-    synced: "Local DB Ready",
-    pushCloud: "Push to Vercel",
+    syncing: "Cloud Syncing...",
+    synced: "Cloud Synchronized",
+    pushCloud: "Push to Database",
     exportData: "Export Backup",
     importBackup: "Import Backup",
     genCollectiveEmail: "Group Feedback Email",
@@ -45,7 +60,7 @@ const TRANSLATIONS = {
     collectiveEmailTitle: "Partner Performance Review",
     auditSummary: "Past Due Shipment Report",
     totalShipments: "Total Past Due",
-    clearData: "Clear Data",
+    clearData: "Clear Local Data",
     genAggregatedEmail: "Draft FWD Follow-up Email",
     filterFwd: "Filter by FWD:",
     allFwd: "All Forwarders",
@@ -62,11 +77,11 @@ const TRANSLATIONS = {
     shipmentsToExplain: "shipments to explain",
     editAuditDate: "Correct Delivery Date",
     saveChanges: "Save Changes",
-    newEddDate: "Revised EDD (YYYY-MM-DD)",
     activateAI: "Activate AI",
     aiReady: "AI Engine Ready",
     aiConfig: "AI Config Needed",
-    exportAssessment: "Export Scores (CSV)"
+    exportAssessment: "Export Scores (CSV)",
+    dbError: "Database Sync Error"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -84,14 +99,14 @@ const TRANSLATIONS = {
     scoreLabel: "系统总分",
     finalize: "保存至云端",
     updateRecord: "更新云端记录",
-    deleteConfirm: "确定要从云端删除此记录吗？",
+    deleteConfirm: "确定要从云端彻底删除此记录吗？",
     selectFwd: "请选择货代...",
     switchLang: "English",
     filterByMonth: "月份：",
     allMonths: "全部月份",
-    syncing: "同步中...",
-    synced: "本地已就绪",
-    pushCloud: "同步到 Vercel",
+    syncing: "云端同步中...",
+    synced: "云端已同步",
+    pushCloud: "同步到数据库",
     exportData: "导出备份",
     importBackup: "恢复备份",
     genCollectiveEmail: "生成全员反馈邮件",
@@ -99,7 +114,7 @@ const TRANSLATIONS = {
     collectiveEmailTitle: "合作伙伴绩效回顾",
     auditSummary: "Past Due 运单审计报表",
     totalShipments: "待解释 Shipment 总量",
-    clearData: "清空数据",
+    clearData: "清空本地数据",
     genAggregatedEmail: "汇总生成该货代催办邮件",
     filterFwd: "筛选货代:",
     allFwd: "全部货代",
@@ -116,11 +131,11 @@ const TRANSLATIONS = {
     shipmentsToExplain: "条运单待解释",
     editAuditDate: "修正日期错误",
     saveChanges: "保存修改",
-    newEddDate: "修正后的 EDD (YYYY-MM-DD)",
     activateAI: "激活 AI 引擎",
     aiReady: "AI 引擎已就绪",
     aiConfig: "需要配置 AI",
-    exportAssessment: "导出评分数据"
+    exportAssessment: "导出评分数据",
+    dbError: "云端同步失败"
   }
 };
 
@@ -133,24 +148,18 @@ const SERVICE_STANDARDS: ServiceStandard[] = [
 
 const BASE_FORWARDER_LIST = ["THI", "AGS", "Dimerco", "DP World", "JAS Forwarding", "Kuehne+Nagel", "Pegasus Forwarding", "Scan Global Logistics", "Schneider", "Speedmark"];
 
-const INITIAL_ASSESSMENTS: ForwarderAssessment[] = [
-  { month: '2025-11', company: 'THI', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: 'Consistently high performance.' },
-  { month: '2025-11', company: 'AGS', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Good', score: 8.5, remarks: '' },
-  { month: '2025-11', company: 'Dimerco', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' },
-  { month: '2025-11', company: 'DP World', frequency: 'Medium', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '>4 hours', evaluation: 'Fair', score: 5.5, remarks: 'Connectivity issues reported in mid-month.' },
-  { month: '2025-11', company: 'JAS Forwarding', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' },
-  { month: '2025-11', company: 'Kuehne+Nagel', frequency: 'High', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 9, remarks: '' },
-  { month: '2025-11', company: 'Pegasus Forwarding', frequency: 'Low', completeness: 'Fair', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 6, remarks: 'Low visibility on EU-US lanes.' },
-  { month: '2025-11', company: 'Scan Global Logistics', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' },
-  { month: '2025-11', company: 'Schneider', frequency: 'Medium', completeness: 'Good', formatStandards: 'Fair', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7, remarks: '' },
-  { month: '2025-11', company: 'Speedmark', frequency: 'Medium', completeness: 'Good', formatStandards: 'Basically Compliant', emailResponse: '≤4 hours', evaluation: 'Fair', score: 7.5, remarks: '' }
-];
+const ADMIN_CREDENTIALS = {
+  username: 'rhodes',
+  password: '102410'
+};
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<'EN' | 'CN'>('CN');
   const t = TRANSLATIONS[lang];
   const [activeTab, setActiveTab] = useState<'AUDIT' | 'ASSESSMENT'>('ASSESSMENT');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'IDLE' | 'SYNCING' | 'ERROR'>('IDLE');
+  
   const [aiAnalysis, setAiAnalysis] = useState<string>('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
@@ -173,14 +182,43 @@ const App: React.FC = () => {
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
 
-  const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v14');
-    if (saved) {
-      const parsed = JSON.parse(saved) as ForwarderAssessment[];
-      return parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
+  const [assessments, setAssessments] = useState<ForwarderAssessment[]>([]);
+
+  // Initialize Firestore
+  const db = useMemo(() => {
+    try {
+      const app = initializeApp(firebaseConfig);
+      return getFirestore(app);
+    } catch (e) {
+      console.warn("Firebase not configured, falling back to local mode.");
+      return null;
     }
-    return INITIAL_ASSESSMENTS;
-  });
+  }, []);
+
+  // Fetch from Cloud on Mount
+  useEffect(() => {
+    if (!db) {
+      const saved = localStorage.getItem('fwd_assessments_local_cache');
+      if (saved) setAssessments(JSON.parse(saved));
+      return;
+    }
+
+    setDbStatus('SYNCING');
+    const q = query(collection(db, "fwd_assessments"), orderBy("month", "desc"));
+    
+    // 实时监听云端变化 (Real-time Sync!)
+    const unsubscribe = onSnapshot(q, (snapshot: any) => {
+      const data = snapshot.docs.map((doc: any) => doc.data() as ForwarderAssessment);
+      setAssessments(data);
+      setDbStatus('IDLE');
+      localStorage.setItem('fwd_assessments_local_cache', JSON.stringify(data));
+    }, (error: any) => {
+      console.error("Firestore Error:", error);
+      setDbStatus('ERROR');
+    });
+
+    return () => unsubscribe();
+  }, [db]);
 
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
@@ -191,6 +229,34 @@ const App: React.FC = () => {
   const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
   const [customFwdName, setCustomFwdName] = useState('');
 
+  const saveToCloud = async (entry: ForwarderAssessment) => {
+    if (!db) return;
+    setDbStatus('SYNCING');
+    try {
+      // 使用 "月份+公司名" 作为唯一 ID
+      const docId = `${entry.month}_${entry.company.replace(/\s+/g, '_')}`;
+      await setDoc(doc(db, "fwd_assessments", docId), entry);
+      setDbStatus('IDLE');
+    } catch (e) {
+      console.error(e);
+      setDbStatus('ERROR');
+      alert(t.dbError);
+    }
+  };
+
+  const removeFromCloud = async (month: string, company: string) => {
+    if (!db) return;
+    setDbStatus('SYNCING');
+    try {
+      const docId = `${month}_${company.replace(/\s+/g, '_')}`;
+      await deleteDoc(doc(db, "fwd_assessments", docId));
+      setDbStatus('IDLE');
+    } catch (e) {
+      console.error(e);
+      setDbStatus('ERROR');
+    }
+  };
+
   const handleActivateAI = async () => {
     // @ts-ignore
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
@@ -198,7 +264,7 @@ const App: React.FC = () => {
       await window.aistudio.openSelectKey();
       setIsApiKeyActive(true);
     } else {
-      alert("System key selector not available. Please ensure you have set API_KEY in Vercel and Redeployed.");
+      alert("System key selector not available. Please ensure you have set API_KEY in Vercel/Cloud Run Environment.");
     }
   };
 
@@ -219,13 +285,6 @@ const App: React.FC = () => {
       setMatrixFilterMonth(availableMonths[0]);
     }
   }, [availableMonths, matrixFilterMonth]);
-
-  useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v14', JSON.stringify(assessments));
-    setIsSyncing(true);
-    const timer = setTimeout(() => setIsSyncing(false), 800);
-    return () => clearTimeout(timer);
-  }, [assessments]);
 
   const dashboardData = useMemo(() => {
     const relevant = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
@@ -264,43 +323,20 @@ const App: React.FC = () => {
   const handleError = (e: any) => {
     console.error(e);
     const msg = e.message || "Unknown error";
-    alert(`AI Service Error: ${msg}\n\nPlease check your Vercel API_KEY or use the 'Activate AI' button.`);
+    alert(`AI Service Error: ${msg}\n\nPlease check your API_KEY.`);
   };
 
   const handleExportAssessments = () => {
     const dataToExport = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
-    if (dataToExport.length === 0) {
-      alert("No data to export.");
-      return;
-    }
-
+    if (dataToExport.length === 0) return;
     const headers = ["Month", "Company", "Frequency", "Completeness", "Standards", "EmailResponse", "Evaluation", "Score", "Remarks"];
-    const csvContent = [
-      headers.join(","),
-      ...dataToExport.map(a => {
-        return [
-          a.month,
-          `"${a.company}"`,
-          a.frequency,
-          a.completeness,
-          a.formatStandards,
-          a.emailResponse,
-          a.evaluation,
-          a.score,
-          `"${(a.remarks || "").replace(/"/g, '""')}"`
-        ].join(",");
-      })
-    ].join("\n");
-
+    const csvContent = [headers.join(","), ...dataToExport.map(a => [a.month, `"${a.company}"`, a.frequency, a.completeness, a.formatStandards, a.emailResponse, a.evaluation, a.score, `"${(a.remarks || "").replace(/"/g, '""')}"`].join(","))].join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Assessments_${matrixFilterMonth === 'ALL' ? 'All_History' : matrixFilterMonth}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `Assessments_${matrixFilterMonth}.csv`;
     link.click();
-    document.body.removeChild(link);
   };
 
   const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
@@ -334,14 +370,7 @@ const App: React.FC = () => {
   const generateAIInsight = async () => {
     setIsAiLoading(true);
     try {
-      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
-      const currentData = assessments.filter(a => a.month === currentMonth);
-      const mockRecords: any[] = currentData.map(a => ({
-         forwarderName: a.company,
-         isOverdue: a.score < 7,
-         hawb: 'N/A'
-      }));
-      const report = await analyzeLogisticsData(mockRecords);
+      const report = await analyzeLogisticsData(logisticsRecords);
       setAiAnalysis(report);
     } catch (e: any) {
       handleError(e);
@@ -444,11 +473,18 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="font-black text-xl uppercase italic leading-none tracking-tight">{t.auditTitle}</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2 h-2 rounded-full ${isApiKeyActive ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`}></span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  {isApiKeyActive ? t.aiReady : t.aiConfig}
-                </span>
+              <div className="flex items-center gap-3 mt-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${dbStatus === 'SYNCING' ? 'bg-amber-400 animate-pulse' : dbStatus === 'ERROR' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    {dbStatus === 'SYNCING' ? t.syncing : dbStatus === 'ERROR' ? t.dbError : t.synced}
+                  </span>
+                </div>
+                <div className="w-px h-2 bg-slate-200"></div>
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isApiKeyActive ? 'bg-indigo-500' : 'bg-slate-300'}`}></span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{isApiKeyActive ? t.aiReady : t.aiConfig}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -631,7 +667,7 @@ const App: React.FC = () => {
                                     setNewEntry({...a}); 
                                     setShowEntryModal(true); 
                                   }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><i className="fas fa-pen-to-square text-xs"></i></button>
-                                  <button onClick={() => { if(confirm(t.deleteConfirm)) setAssessments(prev => prev.filter(x => !(x.month === a.month && x.company === a.company))); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><i className="fas fa-trash-can text-xs"></i></button>
+                                  <button onClick={() => { if(confirm(t.deleteConfirm)) removeFromCloud(a.month, a.company); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><i className="fas fa-trash-can text-xs"></i></button>
                                 </div>
                                 <span className={`font-black text-lg w-8 text-right ${a.score >= 9 ? 'text-emerald-600' : a.score < 7 ? 'text-rose-600' : 'text-indigo-600'}`}>{a.score}</span>
                               </div>
@@ -934,11 +970,7 @@ const App: React.FC = () => {
                   alert("Please specify a Forwarder Name.");
                   return;
                 }
-                if (editingIndex) {
-                  setAssessments(prev => prev.map(a => (a.month === editingIndex.month && a.company === editingIndex.company) ? newEntry : a));
-                } else {
-                  setAssessments(prev => [newEntry, ...prev]);
-                }
+                saveToCloud(newEntry);
                 setShowEntryModal(false);
                 setEditingIndex(null);
                 setCustomFwdName('');
@@ -955,7 +987,7 @@ const App: React.FC = () => {
               <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-indigo-600 text-white">
                  <div>
                     <h2 className="text-xl font-black uppercase italic tracking-tight">Draft Preview</h2>
-                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">AI Aggregated Content (FTP Upload Data)</p>
+                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">Cloud Synchronized Data</p>
                  </div>
                  <button onClick={() => setShowEmailModal(false)} className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"><i className="fas fa-times text-xl"></i></button>
               </div>
@@ -980,7 +1012,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v15.0 // Deployment Ready
+        Corsair Data Intelligence v16.0 // Firestore Cloud Ready
       </footer>
     </div>
   );
