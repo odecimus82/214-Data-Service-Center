@@ -62,7 +62,10 @@ const TRANSLATIONS = {
     shipmentsToExplain: "shipments to explain",
     editAuditDate: "Correct Delivery Date",
     saveChanges: "Save Changes",
-    newEddDate: "Revised EDD (YYYY-MM-DD)"
+    newEddDate: "Revised EDD (YYYY-MM-DD)",
+    activateAI: "Activate AI Engine",
+    keyRequired: "API Key Selection Required",
+    keyDesc: "Please select a paid API key to enable AI-powered auditing and email generation."
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -112,7 +115,10 @@ const TRANSLATIONS = {
     shipmentsToExplain: "条运单待解释",
     editAuditDate: "修正日期错误",
     saveChanges: "保存修改",
-    newEddDate: "修正后的 EDD (YYYY-MM-DD)"
+    newEddDate: "修正后的 EDD (YYYY-MM-DD)",
+    activateAI: "激活 AI 引擎",
+    keyRequired: "需要授权 API 密钥",
+    keyDesc: "为了使用 AI 自动生成邮件和报告，请授权或选择您的 API 密钥。"
   }
 };
 
@@ -147,6 +153,9 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
+  // API Key Guard
+  const [isApiKeySelected, setIsApiKeySelected] = useState(true); // Default to true to check on mount
+  
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('corsair_admin_auth') === 'true');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState(false);
@@ -161,13 +170,31 @@ const App: React.FC = () => {
   const [showEmailModal, setShowEmailModal] = useState(false);
 
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v11');
+    const saved = localStorage.getItem('fwd_assessments_cloud_v12');
     if (saved) {
       const parsed = JSON.parse(saved) as ForwarderAssessment[];
       return parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
     }
     return INITIAL_ASSESSMENTS;
   });
+
+  // Check for API Key on mount
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setIsApiKeySelected(hasKey);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleOpenKeySelector = async () => {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      setIsApiKeySelected(true); // Assume success per instructions
+    }
+  };
 
   const dynamicFwdList = useMemo(() => {
     const fromAssessments = assessments.map(a => a.company);
@@ -188,7 +215,7 @@ const App: React.FC = () => {
   }, [availableMonths, matrixFilterMonth]);
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v11', JSON.stringify(assessments));
+    localStorage.setItem('fwd_assessments_cloud_v12', JSON.stringify(assessments));
     setIsSyncing(true);
     const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
@@ -236,7 +263,11 @@ const App: React.FC = () => {
       setShowEmailModal(true);
     } catch (e: any) {
       console.error(e);
-      alert(`AI Generation Error: ${e.message || 'Unknown error'}. Please check API connection.`);
+      if (e.message?.includes("API Key")) {
+        handleOpenKeySelector();
+      } else {
+        alert(`AI Generation Error: ${e.message || 'Unknown'}`);
+      }
     } finally {
       setIsEmailLoading(false);
     }
@@ -252,7 +283,11 @@ const App: React.FC = () => {
       setShowEmailModal(true);
     } catch (e: any) {
       console.error(e);
-      alert(`AI Generation Error: ${e.message || 'Unknown error'}. Try refreshing or check key status.`);
+      if (e.message?.includes("API Key")) {
+        handleOpenKeySelector();
+      } else {
+        alert(`AI Error: ${e.message}`);
+      }
     } finally {
       setIsEmailLoading(false);
     }
@@ -272,7 +307,8 @@ const App: React.FC = () => {
       setAiAnalysis(report);
     } catch (e: any) {
       console.error(e);
-      setAiAnalysis(`Analysis Error: ${e.message || 'Unauthorized'}. Ensure the project has Gemini API access enabled.`);
+      setAiAnalysis(`Error: ${e.message || 'Unauthorized access'}.`);
+      if (e.message?.includes("API Key")) handleOpenKeySelector();
     } finally {
       setIsAiLoading(false);
     }
@@ -370,6 +406,31 @@ const App: React.FC = () => {
     else if (finalScore >= 8) evalStr = "Good";
     setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
   }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
+
+  // If no API key is selected, show activation screen
+  if (!isApiKeySelected) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
+        <div className="max-w-md w-full bg-slate-800 rounded-[3rem] p-12 text-center border border-slate-700 shadow-2xl animate-in zoom-in duration-500">
+          <div className="w-20 h-20 bg-indigo-500/10 rounded-[2rem] flex items-center justify-center mx-auto mb-8 relative">
+            <div className="absolute inset-0 bg-indigo-500 rounded-[2rem] animate-ping opacity-20"></div>
+            <i className="fas fa-microchip text-indigo-400 text-3xl"></i>
+          </div>
+          <h1 className="text-white text-2xl font-black uppercase italic tracking-tight mb-4">{t.keyRequired}</h1>
+          <p className="text-slate-400 text-sm leading-relaxed mb-10">{t.keyDesc}</p>
+          <button 
+            onClick={handleOpenKeySelector}
+            className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[11px] hover:bg-indigo-500 shadow-xl shadow-indigo-900 transition-all flex items-center justify-center gap-3"
+          >
+            <i className="fas fa-key"></i> {t.activateAI}
+          </button>
+          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="mt-8 inline-block text-[10px] font-bold text-slate-500 uppercase hover:text-indigo-400 transition-colors tracking-widest border-b border-slate-700 pb-1">
+            Gemini Billing & Project Docs
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
@@ -790,7 +851,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v12.0 // AI Engine Fixed
+        Corsair Data Intelligence v13.0 // Key Selection Enabled
       </footer>
     </div>
   );
