@@ -151,7 +151,6 @@ const App: React.FC = () => {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState(false);
 
-  // 审计中心数据
   const [logisticsRecords, setLogisticsRecords] = useState<LogisticsRecord[]>([]);
   const [auditFilterFwd, setAuditFilterFwd] = useState<string>('ALL');
   const [editingAuditId, setEditingAuditId] = useState<string | null>(null);
@@ -162,7 +161,7 @@ const App: React.FC = () => {
   const [showEmailModal, setShowEmailModal] = useState(false);
 
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v10');
+    const saved = localStorage.getItem('fwd_assessments_cloud_v11');
     if (saved) {
       const parsed = JSON.parse(saved) as ForwarderAssessment[];
       return parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
@@ -189,7 +188,7 @@ const App: React.FC = () => {
   }, [availableMonths, matrixFilterMonth]);
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v10', JSON.stringify(assessments));
+    localStorage.setItem('fwd_assessments_cloud_v11', JSON.stringify(assessments));
     setIsSyncing(true);
     const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
@@ -229,42 +228,55 @@ const App: React.FC = () => {
     return Object.entries(summary).sort((a, b) => b[1].length - a[1].length);
   }, [pastDueRecords]);
 
-  const auditFwdOptions = useMemo(() => {
-    const fwds = new Set(pastDueRecords.map(r => r.forwarderName));
-    return Array.from(fwds).sort();
-  }, [pastDueRecords]);
+  const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
+    setIsEmailLoading(true);
+    try {
+      const content = await generateExplanationEmail(fwdName, records);
+      setCollectiveEmail(content);
+      setShowEmailModal(true);
+    } catch (e: any) {
+      console.error(e);
+      alert(`AI Generation Error: ${e.message || 'Unknown error'}. Please check API connection.`);
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
 
-  const displayAuditRecords = useMemo(() => {
-    if (auditFilterFwd === 'ALL') return pastDueRecords;
-    return pastDueRecords.filter(r => r.forwarderName === auditFilterFwd);
-  }, [pastDueRecords, auditFilterFwd]);
+  const handleGenerateCollectiveEmail = async () => {
+    setIsEmailLoading(true);
+    try {
+      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
+      const currentData = assessments.filter(a => a.month === currentMonth);
+      const emailContent = await generateCollectiveFeedbackEmail(currentMonth, currentData);
+      setCollectiveEmail(emailContent);
+      setShowEmailModal(true);
+    } catch (e: any) {
+      console.error(e);
+      alert(`AI Generation Error: ${e.message || 'Unknown error'}. Try refreshing or check key status.`);
+    } finally {
+      setIsEmailLoading(false);
+    }
+  };
 
-  const [showEntryModal, setShowEntryModal] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
-  const [newEntry, setNewEntry] = useState<ForwarderAssessment>({
-    month: new Date().toISOString().substring(0, 7),
-    company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
-  });
-
-  const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
-  const [customFwdName, setCustomFwdName] = useState('');
-
-  useEffect(() => {
-    let base = 4.0;
-    if (newEntry.frequency === 'High') base += 1.5;
-    else if (newEntry.frequency === 'Medium') base += 0.5;
-    if (newEntry.completeness === 'Excellent') base += 1.5;
-    else if (newEntry.completeness === 'Good') base += 0.5;
-    if (newEntry.formatStandards === 'Compliant') base += 1.5;
-    else if (newEntry.formatStandards === 'Basically Compliant') base += 0.5;
-    if (newEntry.emailResponse === '≤2 hours') base += 1.5;
-    else if (newEntry.emailResponse === '≤4 hours') base += 0.5;
-    const finalScore = Math.min(10, base);
-    let evalStr = "Fair";
-    if (finalScore >= 9) evalStr = "Excellent";
-    else if (finalScore >= 8) evalStr = "Good";
-    setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
-  }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
+  const generateAIInsight = async () => {
+    setIsAiLoading(true);
+    try {
+      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
+      const currentData = assessments.filter(a => a.month === currentMonth);
+      const mockRecords: any[] = currentData.map(a => ({
+         forwarderName: a.company,
+         isOverdue: a.score < 7,
+         hawb: 'N/A'
+      }));
+      const report = await analyzeLogisticsData(mockRecords);
+      setAiAnalysis(report);
+    } catch (e: any) {
+      console.error(e);
+      setAiAnalysis(`Analysis Error: ${e.message || 'Unauthorized'}. Ensure the project has Gemini API access enabled.`);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -296,53 +308,6 @@ const App: React.FC = () => {
     setActiveTab('ASSESSMENT');
   };
 
-  const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
-    setIsEmailLoading(true);
-    try {
-      const content = await generateExplanationEmail(fwdName, records);
-      setCollectiveEmail(content);
-      setShowEmailModal(true);
-    } catch (e) {
-      alert("AI Generation failed.");
-    } finally {
-      setIsEmailLoading(false);
-    }
-  };
-
-  const handleGenerateCollectiveEmail = async () => {
-    setIsEmailLoading(true);
-    try {
-      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
-      const currentData = assessments.filter(a => a.month === currentMonth);
-      const emailContent = await generateCollectiveFeedbackEmail(currentMonth, currentData);
-      setCollectiveEmail(emailContent);
-      setShowEmailModal(true);
-    } catch (e) {
-      alert("AI Generation failed.");
-    } finally {
-      setIsEmailLoading(false);
-    }
-  };
-
-  const generateAIInsight = async () => {
-    setIsAiLoading(true);
-    try {
-      const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
-      const currentData = assessments.filter(a => a.month === currentMonth);
-      const mockRecords: any[] = currentData.map(a => ({
-         forwarderName: a.company,
-         isOverdue: a.score < 7,
-         hawb: 'N/A'
-      }));
-      const report = await analyzeLogisticsData(mockRecords);
-      setAiAnalysis(report);
-    } catch (e) {
-      setAiAnalysis("AI Analysis failed. Check API Key.");
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
   const handleAuditDelete = (id: string) => {
     if (confirm(t.deleteConfirm)) {
       setLogisticsRecords(prev => prev.filter(r => r.id !== id));
@@ -352,7 +317,6 @@ const App: React.FC = () => {
   const handleAuditUpdateDate = (id: string, newDate: string) => {
     setLogisticsRecords(prev => prev.map(r => {
       if (r.id === id) {
-        // Re-calculate overdue based on the new date
         const d = new Date(newDate);
         const isOverdue = !isNaN(d.getTime()) && d < new Date();
         return { ...r, estimatedDeliveryDate: newDate, isOverdue };
@@ -370,6 +334,42 @@ const App: React.FC = () => {
     if (val === 'low' || val.includes('>4') || val === 'fail') return 'text-rose-600 bg-rose-50';
     return 'text-slate-500 bg-slate-50';
   };
+
+  const [showEntryModal, setShowEntryModal] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<{ month: string, company: string } | null>(null);
+  const [newEntry, setNewEntry] = useState<ForwarderAssessment>({
+    month: new Date().toISOString().substring(0, 7),
+    company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
+  });
+  const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
+  const [customFwdName, setCustomFwdName] = useState('');
+
+  const auditFwdOptions = useMemo(() => {
+    const fwds = new Set(pastDueRecords.map(r => r.forwarderName));
+    return Array.from(fwds).sort();
+  }, [pastDueRecords]);
+
+  const displayAuditRecords = useMemo(() => {
+    if (auditFilterFwd === 'ALL') return pastDueRecords;
+    return pastDueRecords.filter(r => r.forwarderName === auditFilterFwd);
+  }, [pastDueRecords, auditFilterFwd]);
+
+  useEffect(() => {
+    let base = 4.0;
+    if (newEntry.frequency === 'High') base += 1.5;
+    else if (newEntry.frequency === 'Medium') base += 0.5;
+    if (newEntry.completeness === 'Excellent') base += 1.5;
+    else if (newEntry.completeness === 'Good') base += 0.5;
+    if (newEntry.formatStandards === 'Compliant') base += 1.5;
+    else if (newEntry.formatStandards === 'Basically Compliant') base += 0.5;
+    if (newEntry.emailResponse === '≤2 hours') base += 1.5;
+    else if (newEntry.emailResponse === '≤4 hours') base += 0.5;
+    const finalScore = Math.min(10, base);
+    let evalStr = "Fair";
+    if (finalScore >= 9) evalStr = "Excellent";
+    else if (finalScore >= 8) evalStr = "Good";
+    setNewEntry(prev => ({ ...prev, score: finalScore, evaluation: evalStr }));
+  }, [newEntry.frequency, newEntry.completeness, newEntry.formatStandards, newEntry.emailResponse]);
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
@@ -415,7 +415,6 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-10">
         {activeTab === 'ASSESSMENT' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            {/* Assessment Filtering Bar */}
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between overflow-x-auto">
               <div className="flex items-center gap-6">
                 <span className="text-[11px] font-black uppercase text-indigo-600 whitespace-nowrap">{t.filterByMonth}</span>
@@ -438,7 +437,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Dashboard Visuals */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm min-h-[500px] flex flex-col">
                 <h3 className="text-sm font-black uppercase italic tracking-tighter mb-10 flex items-center gap-3">
@@ -504,7 +502,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Assessment Records List */}
             <div className="space-y-6">
               {filteredGrouped.map(([month, data]) => (
                 <div key={month} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
@@ -623,7 +620,6 @@ const App: React.FC = () => {
                   </div>
                 ) : (
                   <div className="space-y-12">
-                      {/* Past Due Summary Cards (Follow-up Required) */}
                       <section className="space-y-6">
                         <div className="flex items-center gap-4 px-2">
                            <span className="w-2 h-8 bg-rose-500 rounded-full"></span>
@@ -652,7 +648,6 @@ const App: React.FC = () => {
                         </div>
                       </section>
 
-                      {/* Main Table View */}
                       <section className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                           <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
@@ -764,112 +759,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Entry Modal */}
-      {showEntryModal && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-6 animate-in zoom-in duration-300">
-           <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden p-10 relative">
-              <button onClick={() => { setShowEntryModal(false); setEditingIndex(null); }} className="absolute top-8 right-8 text-slate-300 hover:text-rose-500 transition-all"><i className="fas fa-times text-2xl"></i></button>
-              <h2 className="text-2xl font-black uppercase italic mb-8">{editingIndex ? t.editAssessment : t.newAssessment}</h2>
-              <div className="grid grid-cols-2 gap-6">
-                 <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.monthPeriod}</label>
-                    <input type="month" disabled={!!editingIndex} value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold" />
-                 </div>
-                 
-                 <div className="space-y-1 relative">
-                    <div className="flex items-center justify-between mb-2">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.fwdName}</label>
-                       {!editingIndex && (
-                         <button 
-                          onClick={() => setIsAddingNewFwd(!isAddingNewFwd)}
-                          className="text-[9px] font-black text-indigo-600 uppercase hover:text-indigo-800"
-                         >
-                           {isAddingNewFwd ? "Select existing" : t.addNewFwd}
-                         </button>
-                       )}
-                    </div>
-                    {isAddingNewFwd ? (
-                      <input 
-                        type="text" 
-                        placeholder="Type FWD Name..."
-                        value={customFwdName} 
-                        onChange={e => {
-                          setCustomFwdName(e.target.value);
-                          setNewEntry({...newEntry, company: e.target.value});
-                        }} 
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
-                      />
-                    ) : (
-                      <select 
-                        disabled={!!editingIndex} 
-                        value={newEntry.company} 
-                        onChange={e => setNewEntry({...newEntry, company: e.target.value})} 
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500"
-                      >
-                         <option value="">{t.selectFwd}</option>
-                         {dynamicFwdList.map(f => <option key={f} value={f}>{f}</option>)}
-                      </select>
-                    )}
-                 </div>
-
-                 {[
-                    { key: 'frequency', opts: ['High', 'Medium', 'Low'] },
-                    { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] },
-                    { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] },
-                    { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }
-                 ].map(field => (
-                    <div key={field.key} className="space-y-1">
-                       <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{field.key.toUpperCase()}</label>
-                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
-                          {field.opts.map(o => <option key={o} value={o}>{o}</option>)}
-                       </select>
-                    </div>
-                 ))}
-
-                 <div className="col-span-2 space-y-1 mt-2">
-                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.remarksLabel}</label>
-                    <textarea 
-                        rows={3}
-                        value={newEntry.remarks}
-                        placeholder={t.remarksPlaceholder}
-                        onChange={e => setNewEntry({...newEntry, remarks: e.target.value})}
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500 resize-none"
-                    />
-                 </div>
-              </div>
-
-              <div className="mt-8 p-6 bg-indigo-50 rounded-2xl flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div>
-                  <div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div>
-                </div>
-                <div className="text-right">
-                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Rank</div>
-                   <div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>{newEntry.evaluation}</div>
-                </div>
-              </div>
-
-              <button onClick={() => {
-                if (!newEntry.company) {
-                  alert("Please specify a Forwarder Name.");
-                  return;
-                }
-                if (editingIndex) {
-                  setAssessments(prev => prev.map(a => (a.month === editingIndex.month && a.company === editingIndex.company) ? newEntry : a));
-                } else {
-                  setAssessments(prev => [newEntry, ...prev]);
-                }
-                setShowEntryModal(false);
-                setEditingIndex(null);
-                setCustomFwdName('');
-              }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
-                {editingIndex ? t.updateRecord : t.finalize}
-              </button>
-           </div>
-        </div>
-      )}
-
-      {/* 邮件预览模态框 */}
       {showEmailModal && (
         <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -901,7 +790,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v11.0 // Data Scrubbing Enabled
+        Corsair Data Intelligence v12.0 // AI Engine Fixed
       </footer>
     </div>
   );
