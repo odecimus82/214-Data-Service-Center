@@ -57,7 +57,12 @@ const TRANSLATIONS = {
     password: "Password",
     loginBtn: "Authorize",
     loginError: "Invalid Credentials",
-    logout: "Sign Out"
+    logout: "Sign Out",
+    followUpRequired: "Follow-up Required",
+    shipmentsToExplain: "shipments to explain",
+    editAuditDate: "Correct Delivery Date",
+    saveChanges: "Save Changes",
+    newEddDate: "Revised EDD (YYYY-MM-DD)"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -102,7 +107,12 @@ const TRANSLATIONS = {
     password: "密码",
     loginBtn: "授权进入",
     loginError: "用户名或密码错误",
-    logout: "退出登录"
+    logout: "退出登录",
+    followUpRequired: "待跟进汇总",
+    shipmentsToExplain: "条运单待解释",
+    editAuditDate: "修正日期错误",
+    saveChanges: "保存修改",
+    newEddDate: "修正后的 EDD (YYYY-MM-DD)"
   }
 };
 
@@ -137,7 +147,6 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
-  // Login State
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('corsair_admin_auth') === 'true');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState(false);
@@ -145,15 +154,15 @@ const App: React.FC = () => {
   // 审计中心数据
   const [logisticsRecords, setLogisticsRecords] = useState<LogisticsRecord[]>([]);
   const [auditFilterFwd, setAuditFilterFwd] = useState<string>('ALL');
+  const [editingAuditId, setEditingAuditId] = useState<string | null>(null);
+  const [tempEdd, setTempEdd] = useState("");
 
-  // 邮件预览状态
   const [collectiveEmail, setCollectiveEmail] = useState<string>('');
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
 
-  // 评估数据
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>(() => {
-    const saved = localStorage.getItem('fwd_assessments_cloud_v8');
+    const saved = localStorage.getItem('fwd_assessments_cloud_v10');
     if (saved) {
       const parsed = JSON.parse(saved) as ForwarderAssessment[];
       return parsed.length > 0 ? parsed : INITIAL_ASSESSMENTS;
@@ -161,7 +170,6 @@ const App: React.FC = () => {
     return INITIAL_ASSESSMENTS;
   });
 
-  // 货代列表管理
   const dynamicFwdList = useMemo(() => {
     const fromAssessments = assessments.map(a => a.company);
     const combined = Array.from(new Set([...BASE_FORWARDER_LIST, ...fromAssessments]));
@@ -181,13 +189,12 @@ const App: React.FC = () => {
   }, [availableMonths, matrixFilterMonth]);
 
   useEffect(() => {
-    localStorage.setItem('fwd_assessments_cloud_v8', JSON.stringify(assessments));
+    localStorage.setItem('fwd_assessments_cloud_v10', JSON.stringify(assessments));
     setIsSyncing(true);
     const timer = setTimeout(() => setIsSyncing(false), 800);
     return () => clearTimeout(timer);
   }, [assessments]);
 
-  // Assessment Dashboard Data
   const dashboardData = useMemo(() => {
     const relevant = assessments.filter(a => matrixFilterMonth === 'ALL' ? true : a.month === matrixFilterMonth);
     const scores: { [key: string]: { sum: number, count: number } } = {};
@@ -209,10 +216,18 @@ const App: React.FC = () => {
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   }, [assessments, matrixFilterMonth]);
 
-  // Audit Logic
   const pastDueRecords = useMemo(() => {
     return logisticsRecords.filter(r => r.isOverdue && !r.actualDeliveryDate);
   }, [logisticsRecords]);
+
+  const pastDueSummary = useMemo(() => {
+    const summary: { [key: string]: LogisticsRecord[] } = {};
+    pastDueRecords.forEach(r => {
+      if (!summary[r.forwarderName]) summary[r.forwarderName] = [];
+      summary[r.forwarderName].push(r);
+    });
+    return Object.entries(summary).sort((a, b) => b[1].length - a[1].length);
+  }, [pastDueRecords]);
 
   const auditFwdOptions = useMemo(() => {
     const fwds = new Set(pastDueRecords.map(r => r.forwarderName));
@@ -281,14 +296,10 @@ const App: React.FC = () => {
     setActiveTab('ASSESSMENT');
   };
 
-  const handleGenerateAggregatedEmail = async () => {
-    if (auditFilterFwd === 'ALL') {
-      alert("请先筛选具体货代再生成催办邮件");
-      return;
-    }
+  const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
     setIsEmailLoading(true);
     try {
-      const content = await generateExplanationEmail(auditFilterFwd, displayAuditRecords);
+      const content = await generateExplanationEmail(fwdName, records);
       setCollectiveEmail(content);
       setShowEmailModal(true);
     } catch (e) {
@@ -330,6 +341,25 @@ const App: React.FC = () => {
     } finally {
       setIsAiLoading(false);
     }
+  };
+
+  const handleAuditDelete = (id: string) => {
+    if (confirm(t.deleteConfirm)) {
+      setLogisticsRecords(prev => prev.filter(r => r.id !== id));
+    }
+  };
+
+  const handleAuditUpdateDate = (id: string, newDate: string) => {
+    setLogisticsRecords(prev => prev.map(r => {
+      if (r.id === id) {
+        // Re-calculate overdue based on the new date
+        const d = new Date(newDate);
+        const isOverdue = !isNaN(d.getTime()) && d < new Date();
+        return { ...r, estimatedDeliveryDate: newDate, isOverdue };
+      }
+      return r;
+    }));
+    setEditingAuditId(null);
   };
 
   const getTagStyle = (text: string) => {
@@ -376,16 +406,6 @@ const App: React.FC = () => {
              {isLoggedIn && (
                <button onClick={handleLogout} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-400 rounded-lg text-[10px] font-black uppercase hover:text-rose-600 transition-all">
                   <i className="fas fa-sign-out-alt mr-2"></i> {t.logout}
-               </button>
-             )}
-             {activeTab === 'ASSESSMENT' && (
-               <button onClick={() => { 
-                 setIsAddingNewFwd(false);
-                 setEditingIndex(null); 
-                 setNewEntry({ month: availableMonths[0] || '2025-11', company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: '' }); 
-                 setShowEntryModal(true); 
-               }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
-                  <i className="fas fa-plus mr-2"></i> {t.newAssessment}
                </button>
              )}
           </div>
@@ -590,7 +610,7 @@ const App: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {logisticsRecords.length === 0 ? (
                   <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
                       <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
@@ -602,82 +622,140 @@ const App: React.FC = () => {
                       </label>
                   </div>
                 ) : (
-                  <div className="space-y-8">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
-                          <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.totalShipments}</div>
-                          <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{pastDueRecords.length}</div>
+                  <div className="space-y-12">
+                      {/* Past Due Summary Cards (Follow-up Required) */}
+                      <section className="space-y-6">
+                        <div className="flex items-center gap-4 px-2">
+                           <span className="w-2 h-8 bg-rose-500 rounded-full"></span>
+                           <h2 className="text-xl font-black uppercase italic tracking-tight">{t.followUpRequired}</h2>
                         </div>
-                        
-                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm col-span-2 flex items-center px-8">
-                          <div className="flex flex-col flex-1">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.filterFwd}</label>
-                              <select 
-                                value={auditFilterFwd} 
-                                onChange={e => setAuditFilterFwd(e.target.value)}
-                                className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
-                              >
-                                <option value="ALL">{t.allFwd}</option>
-                                {auditFwdOptions.map(f => <option key={f} value={f}>{f}</option>)}
-                              </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                           {pastDueSummary.map(([fwdName, records]) => (
+                             <div key={fwdName} className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                                <div>
+                                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">{fwdName}</div>
+                                   <div className="flex items-baseline gap-2">
+                                      <span className="text-3xl font-black text-rose-600 tracking-tighter">{records.length}</span>
+                                      <span className="text-[9px] font-black text-rose-300 uppercase italic leading-none">{t.shipmentsToExplain}</span>
+                                   </div>
+                                </div>
+                                <button 
+                                  onClick={() => handleGenerateAggregatedEmail(fwdName, records)}
+                                  disabled={isEmailLoading}
+                                  className="mt-8 w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all disabled:opacity-50"
+                                >
+                                  {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-wand-magic-sparkles mr-2"></i>}
+                                  {t.genAggregatedEmail}
+                                </button>
+                             </div>
+                           ))}
+                        </div>
+                      </section>
+
+                      {/* Main Table View */}
+                      <section className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                          <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
+                            <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.totalShipments}</div>
+                            <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{pastDueRecords.length}</div>
                           </div>
-                          {auditFilterFwd !== 'ALL' && (
-                            <button 
-                                onClick={handleGenerateAggregatedEmail}
-                                disabled={isEmailLoading}
-                                className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
-                            >
-                              {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>}
-                              {t.genAggregatedEmail}
+                          
+                          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm col-span-2 flex items-center px-8">
+                            <div className="flex flex-col flex-1">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.filterFwd}</label>
+                                <select 
+                                  value={auditFilterFwd} 
+                                  onChange={e => setAuditFilterFwd(e.target.value)}
+                                  className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
+                                >
+                                  <option value="ALL">{t.allFwd}</option>
+                                  {auditFwdOptions.map(f => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                            </div>
+                            {auditFilterFwd !== 'ALL' && (
+                              <button 
+                                  onClick={() => handleGenerateAggregatedEmail(auditFilterFwd, displayAuditRecords)}
+                                  disabled={isEmailLoading}
+                                  className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
+                              >
+                                {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>}
+                                {t.genAggregatedEmail}
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-end">
+                            <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
+                              <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
                             </button>
-                          )}
+                          </div>
                         </div>
 
-                        <div className="flex items-center justify-end">
-                          <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
-                            <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                          <h2 className="text-xl font-black uppercase italic tracking-tight">
-                            {auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}
-                          </h2>
-                          <span className="text-[10px] font-black text-slate-400 uppercase">Showing {displayAuditRecords.length} Shipments</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left">
-                            <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
-                              <tr>
-                                <th className="px-8 py-6">FWD</th>
-                                <th className="px-6 py-6">HAWB</th>
-                                <th className="px-6 py-6">Origin</th>
-                                <th className="px-6 py-6">Dest</th>
-                                <th className="px-6 py-6 text-center">EDD (AY)</th>
-                                <th className="px-6 py-6 text-center">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {displayAuditRecords.slice(0, 200).map((r, idx) => (
-                                <tr key={idx} className="hover:bg-rose-50/10 transition-colors bg-rose-50/5">
-                                  <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
-                                  <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
-                                  <td className="px-6 py-6 text-xs text-slate-500">{r.origin}</td>
-                                  <td className="px-6 py-6 text-xs text-slate-500">{r.destination}</td>
-                                  <td className="px-6 py-6 text-center text-xs font-bold text-rose-500">{r.estimatedDeliveryDate}</td>
-                                  <td className="px-6 py-6 text-center">
-                                    <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase bg-rose-100 text-rose-600 animate-pulse">
-                                      Past Due
-                                    </span>
-                                  </td>
+                        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                          <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
+                            <h2 className="text-xl font-black uppercase italic tracking-tight">
+                              {auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}
+                            </h2>
+                            <span className="text-[10px] font-black text-slate-400 uppercase">Showing {displayAuditRecords.length} Shipments</span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                              <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                                <tr>
+                                  <th className="px-8 py-6">FWD</th>
+                                  <th className="px-6 py-6">HAWB</th>
+                                  <th className="px-6 py-6">Origin</th>
+                                  <th className="px-6 py-6">Dest</th>
+                                  <th className="px-6 py-6 text-center">EDD (AY)</th>
+                                  <th className="px-6 py-6 text-center">Actions</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {displayAuditRecords.slice(0, 200).map((r, idx) => (
+                                  <tr key={idx} className="hover:bg-rose-50/10 transition-colors bg-rose-50/5 group">
+                                    <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
+                                    <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
+                                    <td className="px-6 py-6 text-xs text-slate-500">{r.origin}</td>
+                                    <td className="px-6 py-6 text-xs text-slate-500">{r.destination}</td>
+                                    <td className="px-6 py-6 text-center text-xs font-bold text-rose-500">
+                                      {editingAuditId === r.id ? (
+                                        <div className="flex items-center gap-2">
+                                          <input 
+                                            type="date" 
+                                            value={tempEdd} 
+                                            onChange={e => setTempEdd(e.target.value)}
+                                            className="bg-white border border-rose-300 rounded px-2 py-1 text-[10px]" 
+                                          />
+                                          <button onClick={() => handleAuditUpdateDate(r.id, tempEdd)} className="text-emerald-600 hover:text-emerald-700"><i className="fas fa-check"></i></button>
+                                          <button onClick={() => setEditingAuditId(null)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
+                                        </div>
+                                      ) : (
+                                        r.estimatedDeliveryDate
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-6 text-center">
+                                      <div className="flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                          onClick={() => { setEditingAuditId(r.id); setTempEdd(r.estimatedDeliveryDate); }}
+                                          className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 text-slate-400 rounded-lg hover:text-indigo-600 hover:border-indigo-100 transition-all"
+                                        >
+                                          <i className="fas fa-pen text-[10px]"></i>
+                                        </button>
+                                        <button 
+                                          onClick={() => handleAuditDelete(r.id)}
+                                          className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 text-slate-400 rounded-lg hover:text-rose-600 hover:border-rose-100 transition-all"
+                                        >
+                                          <i className="fas fa-trash-can text-[10px]"></i>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
+                      </section>
                   </div>
                 )}
               </div>
@@ -823,7 +901,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v9.0 // Backstage Access Enabled
+        Corsair Data Intelligence v11.0 // Data Scrubbing Enabled
       </footer>
     </div>
   );
