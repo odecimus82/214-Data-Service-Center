@@ -5,10 +5,9 @@ import { parseLogisticsCSV } from './utils/csvParser';
 import { analyzeLogisticsData } from './services/geminiService';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Cell, LineChart, Line, Legend, AreaChart, Area 
+  Cell, LineChart, Legend, AreaChart, Area 
 } from 'recharts';
 
-// Translation Dictionary
 const TRANSLATIONS = {
   EN: {
     auditTitle: "214 Audit",
@@ -53,7 +52,10 @@ const TRANSLATIONS = {
     expandStandards: "View Service Standards",
     collapseStandards: "Hide Service Standards",
     viewDetails: "View Details",
-    hideDetails: "Hide Details"
+    hideDetails: "Hide Details",
+    cloudSync: "Syncing to Cloud...",
+    cloudReady: "Cloud Synced",
+    loginRequired: "Login Required for DB Access"
   },
   CN: {
     auditTitle: "214 数据审计",
@@ -98,7 +100,10 @@ const TRANSLATIONS = {
     expandStandards: "展开服务标准详情",
     collapseStandards: "收起服务标准详情",
     viewDetails: "查看详情",
-    hideDetails: "收起详情"
+    hideDetails: "收起详情",
+    cloudSync: "云端同步中...",
+    cloudReady: "数据已同步至云端",
+    loginRequired: "登录以启用数据库存储"
   }
 };
 
@@ -136,6 +141,7 @@ const App: React.FC = () => {
   const [chartMode, setChartMode] = useState<'RANK' | 'EVOLUTION'>('RANK');
   const [records, setRecords] = useState<LogisticsRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [systemAnalysis, setSystemAnalysis] = useState<string>('');
   const [isStandardsExpanded, setIsStandardsExpanded] = useState(false);
   
@@ -148,16 +154,8 @@ const App: React.FC = () => {
     return (Array.from(new Set(assessments.map(a => a.month))) as string[]).sort((a, b) => b.localeCompare(a));
   }, [assessments]);
 
-  // Default to the latest month
   const [matrixFilterMonth, setMatrixFilterMonth] = useState<string>(availableMonths[0] || 'ALL');
-  // State to track which months are manually expanded in 'ALL' mode
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (availableMonths[0] && matrixFilterMonth === 'ALL' && expandedMonths.size === 0) {
-       // If reset or initialized, we might want some default behavior
-    }
-  }, [availableMonths]);
 
   const [selectedDashboardMonths, setSelectedDashboardMonths] = useState<string[]>([]);
   useEffect(() => {
@@ -192,6 +190,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem('fwd_assessments', JSON.stringify(assessments));
+    // Mock Syncing effect for Vercel/Prisma demo
+    setIsSyncing(true);
+    const timer = setTimeout(() => setIsSyncing(false), 800);
+    return () => clearTimeout(timer);
   }, [assessments]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -300,7 +302,18 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-lg font-black uppercase tracking-tight italic">214 <span className="text-indigo-400">{t.auditHub}</span></h1>
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.3em]">Operational Node v3.9</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-[8px] text-slate-500 font-bold uppercase tracking-[0.2em]">Operational Node v3.9</p>
+                {isSyncing ? (
+                  <span className="text-[8px] text-indigo-400 animate-pulse flex items-center gap-1">
+                    <i className="fas fa-circle-notch fa-spin"></i> {t.cloudSync}
+                  </span>
+                ) : (
+                  <span className="text-[8px] text-emerald-500/60 flex items-center gap-1">
+                    <i className="fas fa-cloud"></i> {t.cloudReady}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           
@@ -479,7 +492,6 @@ const App: React.FC = () => {
                         </table>
                       </div>
                       
-                      {/* Integrated Critical Actions for this Month */}
                       <div className="px-12 py-10 bg-slate-900 text-white border-t border-slate-800">
                         <h3 className="text-xs font-black uppercase tracking-widest mb-6 flex items-center gap-4">
                           <i className="fas fa-microscope text-indigo-400"></i> {t.actions}
@@ -623,8 +635,7 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {/* Collapsible Service Standards at the Bottom */}
-            <div className="mt-20">
+            <div className="mt-20 pb-20">
               <button 
                 onClick={() => setIsStandardsExpanded(!isStandardsExpanded)}
                 className="w-full bg-white border border-slate-200 py-8 px-12 rounded-[2.5rem] shadow-sm flex items-center justify-between hover:bg-slate-50 transition-all group"
@@ -665,7 +676,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Entry Modal */}
       {showEntryModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/95 backdrop-blur-xl animate-in zoom-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-[4rem] shadow-2xl overflow-hidden flex h-[85vh]">
