@@ -14,10 +14,6 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 // @ts-ignore
 import { getFirestore, collection, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, writeBatch } from 'firebase/firestore';
 
-/**
- * 注意：如果您需要使用云端同步，请在此处填入您的 Firebase 配置。
- * 如果保持原样，系统将自动降级为本地存储模式。
- */
 const firebaseConfig = {
   apiKey: "请替换为你的API_KEY",
   authDomain: "请替换为你的AUTH_DOMAIN",
@@ -167,6 +163,12 @@ const App: React.FC = () => {
   // Initialize API Key status
   useEffect(() => {
     const checkKey = async () => {
+      // Priority 1: Check process.env
+      if (process.env.API_KEY) {
+        setIsApiKeyActive(true);
+        return;
+      }
+      // Priority 2: Check window.aistudio
       // @ts-ignore
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         // @ts-ignore
@@ -239,6 +241,10 @@ const App: React.FC = () => {
 
   // Helper to ensure API Key is set before AI calls
   const ensureAiKey = async () => {
+    if (process.env.API_KEY) {
+      setIsApiKeyActive(true);
+      return;
+    }
     // @ts-ignore
     if (window.aistudio) {
       // @ts-ignore
@@ -246,9 +252,12 @@ const App: React.FC = () => {
       if (!hasKey) {
         // @ts-ignore
         await window.aistudio.openSelectKey();
-        // Assuming user proceeds after opening the key selector
+        setIsApiKeyActive(true);
+      } else {
         setIsApiKeyActive(true);
       }
+    } else {
+      alert("No API Key detected in Environment Variables and AI Studio tools missing. Please check your Vercel/Local config.");
     }
   };
 
@@ -296,7 +305,7 @@ const App: React.FC = () => {
       await window.aistudio.openSelectKey();
       setIsApiKeyActive(true);
     } else {
-      alert("System key selector not available. Key selection is handled by the platform environment.");
+      alert("Key selection is handled by the platform environment. Please ensure API_KEY is set in your server-side environment.");
     }
   };
 
@@ -392,11 +401,11 @@ const App: React.FC = () => {
   const handleError = (e: any) => {
     console.error(e);
     const msg = e.message || "Unknown error";
-    if (msg.toLowerCase().includes("api key")) {
+    if (msg.toLowerCase().includes("api key") || msg.toLowerCase().includes("not set")) {
         // Automatically try to open key selector if missing
         handleActivateAI();
     } else {
-        alert(`AI Service Error: ${msg}\n\nPlease check your configuration.`);
+        alert(`AI Service Alert: ${msg}`);
     }
   };
 
@@ -926,7 +935,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v18.0 // AI Key Auto-Check Active
+        Corsair Data Intelligence v19.0 // AI Session Validated
       </footer>
     </div>
   );

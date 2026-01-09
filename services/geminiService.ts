@@ -1,13 +1,23 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { LogisticsRecord, ForwarderAssessment } from "../types";
+
+/**
+ * 内部辅助函数：获取 API Key 并初始化 AI
+ */
+const getAiClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("An API Key must be set when running in a browser. Please click 'Activate AI' to authorize.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 /**
  * 汇总生成指定货代的 Past Due 催办邮件
  */
 export const generateExplanationEmail = async (fwdName: string, records: LogisticsRecord[]) => {
-  // 每次调用时初始化，确保获取最新的 API_KEY
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAiClient();
   
   const shipmentsTable = records.map(r => 
     `| ${r.hawb} | EDD (AY): ${r.estimatedDeliveryDate} | Origin: ${r.origin} | Dest: ${r.destination} |`
@@ -51,7 +61,7 @@ export const generateExplanationEmail = async (fwdName: string, records: Logisti
  * 生成全员月度绩效反馈邮件
  */
 export const generateCollectiveFeedbackEmail = async (month: string, assessments: ForwarderAssessment[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAiClient();
   
   const summaryMetrics = {
     avgScore: assessments.length > 0 ? assessments.reduce((acc, curr) => acc + curr.score, 0) / assessments.length : 0,
@@ -87,7 +97,7 @@ export const generateCollectiveFeedbackEmail = async (month: string, assessments
  * 分析物流数据并生成洞察报告
  */
 export const analyzeLogisticsData = async (records: LogisticsRecord[]) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAiClient();
   const summary = records.reduce((acc: any, curr) => {
     acc[curr.forwarderName] = acc[curr.forwarderName] || { total: 0, pastDue: 0 };
     acc[curr.forwarderName].total++;
