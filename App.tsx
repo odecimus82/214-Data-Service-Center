@@ -14,6 +14,10 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 // @ts-ignore
 import { getFirestore, collection, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, writeBatch } from 'firebase/firestore';
 
+/**
+ * 注意：如果您需要使用云端同步，请在此处填入您的 Firebase 配置。
+ * 如果保持原样，系统将自动降级为本地存储模式。
+ */
 const firebaseConfig = {
   apiKey: "请替换为你的API_KEY",
   authDomain: "请替换为你的AUTH_DOMAIN",
@@ -158,10 +162,20 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   
-  const [isApiKeyActive, setIsApiKeyActive] = useState(() => {
-    // @ts-ignore
-    return !!(typeof process !== 'undefined' && process.env && process.env.API_KEY);
-  });
+  const [isApiKeyActive, setIsApiKeyActive] = useState(false);
+
+  // Initialize API Key status
+  useEffect(() => {
+    const checkKey = async () => {
+      // @ts-ignore
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        // @ts-ignore
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setIsApiKeyActive(hasKey);
+      }
+    };
+    checkKey();
+  }, []);
 
   const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('corsair_admin_auth') === 'true');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -172,19 +186,16 @@ const App: React.FC = () => {
   const [editingAuditId, setEditingAuditId] = useState<string | null>(null);
   const [tempEdd, setTempEdd] = useState("");
   
-  // Batch selection state
   const [selectedAuditIds, setSelectedAuditIds] = useState<Set<string>>(new Set());
-
   const [collectiveEmail, setCollectiveEmail] = useState<string>('');
   const [isEmailLoading, setIsEmailLoading] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
-
   const [assessments, setAssessments] = useState<ForwarderAssessment[]>([]);
 
   // Initialize Firestore
   const db = useMemo(() => {
     try {
-      if (firebaseConfig.apiKey.includes("请替换")) {
+      if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("请替换")) {
           setDbStatus('OFFLINE');
           return null;
       }
@@ -197,17 +208,14 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Fetch from Cloud on Mount
   useEffect(() => {
     if (!db) {
       const saved = localStorage.getItem('fwd_assessments_local_cache');
       if (saved) setAssessments(JSON.parse(saved));
       return;
     }
-
     setDbStatus('SYNCING');
     const q = query(collection(db, "fwd_assessments"), orderBy("month", "desc"));
-    
     const unsubscribe = onSnapshot(q, (snapshot: any) => {
       const data = snapshot.docs.map((doc: any) => doc.data() as ForwarderAssessment);
       setAssessments(data);
@@ -217,7 +225,6 @@ const App: React.FC = () => {
       console.error("Firestore Error:", error);
       setDbStatus('ERROR');
     });
-
     return () => unsubscribe();
   }, [db]);
 
@@ -229,6 +236,21 @@ const App: React.FC = () => {
   });
   const [isAddingNewFwd, setIsAddingNewFwd] = useState(false);
   const [customFwdName, setCustomFwdName] = useState('');
+
+  // Helper to ensure API Key is set before AI calls
+  const ensureAiKey = async () => {
+    // @ts-ignore
+    if (window.aistudio) {
+      // @ts-ignore
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        // @ts-ignore
+        await window.aistudio.openSelectKey();
+        // Assuming user proceeds after opening the key selector
+        setIsApiKeyActive(true);
+      }
+    }
+  };
 
   const saveToCloud = async (entry: ForwarderAssessment) => {
     if (!db) {
@@ -274,7 +296,7 @@ const App: React.FC = () => {
       await window.aistudio.openSelectKey();
       setIsApiKeyActive(true);
     } else {
-      alert("System key selector not available. Please ensure you have set API_KEY in Vercel/Cloud Run Environment.");
+      alert("System key selector not available. Key selection is handled by the platform environment.");
     }
   };
 
@@ -353,7 +375,6 @@ const App: React.FC = () => {
   const handleBatchDelete = async () => {
     const count = selectedAuditIds.size;
     if (confirm(t.batchDeleteConfirm.replace('{n}', count.toString()))) {
-      // Local state update
       setLogisticsRecords(prev => prev.filter(r => !selectedAuditIds.has(r.id)));
       setSelectedAuditIds(new Set());
     }
@@ -371,7 +392,12 @@ const App: React.FC = () => {
   const handleError = (e: any) => {
     console.error(e);
     const msg = e.message || "Unknown error";
-    alert(`AI Service Error: ${msg}\n\nPlease check your API_KEY.`);
+    if (msg.toLowerCase().includes("api key")) {
+        // Automatically try to open key selector if missing
+        handleActivateAI();
+    } else {
+        alert(`AI Service Error: ${msg}\n\nPlease check your configuration.`);
+    }
   };
 
   const handleExportAssessments = () => {
@@ -388,6 +414,7 @@ const App: React.FC = () => {
   };
 
   const handleGenerateAggregatedEmail = async (fwdName: string, records: LogisticsRecord[]) => {
+    await ensureAiKey();
     setIsEmailLoading(true);
     try {
       const content = await generateExplanationEmail(fwdName, records);
@@ -401,6 +428,7 @@ const App: React.FC = () => {
   };
 
   const handleGenerateCollectiveEmail = async () => {
+    await ensureAiKey();
     setIsEmailLoading(true);
     try {
       const currentMonth = matrixFilterMonth === 'ALL' ? (availableMonths[0] || '') : matrixFilterMonth;
@@ -416,6 +444,7 @@ const App: React.FC = () => {
   };
 
   const generateAIInsight = async () => {
+    await ensureAiKey();
     setIsAiLoading(true);
     try {
       const report = await analyzeLogisticsData(logisticsRecords);
@@ -558,7 +587,7 @@ const App: React.FC = () => {
             {dbStatus === 'OFFLINE' && (
                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-4 text-amber-700 text-[11px] font-bold">
                     <i className="fas fa-info-circle text-lg text-amber-500"></i>
-                    <div>请在 <code>App.tsx</code> 中填入你的 Firebase 配置信息以开启云端同步功能。目前数据仅保存在本地。</div>
+                    <div>请在 <code>App.tsx</code> 中填入您的 Firebase 配置信息。目前数据仅保存在本地。</div>
                 </div>
             )}
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between overflow-x-auto">
@@ -897,7 +926,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v17.0 // Batch Operations Enabled
+        Corsair Data Intelligence v18.0 // AI Key Auto-Check Active
       </footer>
     </div>
   );
