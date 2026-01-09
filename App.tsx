@@ -12,12 +12,8 @@ import {
 // @ts-ignore
 import { initializeApp, getApp, getApps } from 'firebase/app';
 // @ts-ignore
-import { getFirestore, collection, setDoc, doc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, setDoc, doc, deleteDoc, onSnapshot, query, orderBy, writeBatch } from 'firebase/firestore';
 
-/**
- * 重要操作：
- * 请将下方的配置替换为你从 Firebase 控制台获取的实际配置。
- */
 const firebaseConfig = {
   apiKey: "请替换为你的API_KEY",
   authDomain: "请替换为你的AUTH_DOMAIN",
@@ -45,6 +41,7 @@ const TRANSLATIONS = {
     finalize: "Save to Cloud",
     updateRecord: "Update Record",
     deleteConfirm: "Confirm deletion from Cloud?",
+    batchDeleteConfirm: "Are you sure you want to delete {n} selected records?",
     selectFwd: "Select Forwarder...",
     switchLang: "中文",
     filterByMonth: "Timeline:",
@@ -52,11 +49,8 @@ const TRANSLATIONS = {
     syncing: "Syncing...",
     synced: "Cloud Linked",
     pushCloud: "Push to Database",
-    exportData: "Export Backup",
-    importBackup: "Import Backup",
     genCollectiveEmail: "Group Feedback Email",
     copySuccess: "Copied!",
-    collectiveEmailTitle: "Partner Performance Review",
     auditSummary: "Past Due Shipment Report",
     totalShipments: "Total Past Due",
     clearData: "Clear Local Data",
@@ -74,8 +68,9 @@ const TRANSLATIONS = {
     logout: "Sign Out",
     followUpRequired: "Follow-up Required",
     shipmentsToExplain: "shipments to explain",
-    editAuditDate: "Correct Delivery Date",
-    saveChanges: "Save Changes",
+    batchActions: "Batch Actions",
+    deleteSelected: "Delete Selected",
+    selectedCount: "{n} selected",
     activateAI: "Activate AI",
     aiReady: "AI Engine Ready",
     aiConfig: "AI Config Needed",
@@ -100,6 +95,7 @@ const TRANSLATIONS = {
     finalize: "保存至云端",
     updateRecord: "更新云端记录",
     deleteConfirm: "确定要从云端彻底删除此记录吗？",
+    batchDeleteConfirm: "确定要批量删除已选中的 {n} 条记录吗？",
     selectFwd: "请选择货代...",
     switchLang: "English",
     filterByMonth: "月份：",
@@ -107,11 +103,8 @@ const TRANSLATIONS = {
     syncing: "同步中...",
     synced: "云端已就绪",
     pushCloud: "同步到数据库",
-    exportData: "导出备份",
-    importBackup: "恢复备份",
     genCollectiveEmail: "生成全员反馈邮件",
     copySuccess: "已复制",
-    collectiveEmailTitle: "合作伙伴绩效回顾",
     auditSummary: "Past Due 运单审计报表",
     totalShipments: "待解释 Shipment 总量",
     clearData: "清空本地数据",
@@ -129,8 +122,9 @@ const TRANSLATIONS = {
     logout: "退出登录",
     followUpRequired: "待跟进汇总",
     shipmentsToExplain: "条运单待解释",
-    editAuditDate: "修正日期错误",
-    saveChanges: "保存修改",
+    batchActions: "批量操作",
+    deleteSelected: "批量删除已选",
+    selectedCount: "已选中 {n} 项",
     activateAI: "激活 AI 引擎",
     aiReady: "AI 引擎已就绪",
     aiConfig: "需要配置 AI",
@@ -177,6 +171,9 @@ const App: React.FC = () => {
   const [auditFilterFwd, setAuditFilterFwd] = useState<string>('ALL');
   const [editingAuditId, setEditingAuditId] = useState<string | null>(null);
   const [tempEdd, setTempEdd] = useState("");
+  
+  // Batch selection state
+  const [selectedAuditIds, setSelectedAuditIds] = useState<Set<string>>(new Set());
 
   const [collectiveEmail, setCollectiveEmail] = useState<string>('');
   const [isEmailLoading, setIsEmailLoading] = useState(false);
@@ -235,7 +232,6 @@ const App: React.FC = () => {
 
   const saveToCloud = async (entry: ForwarderAssessment) => {
     if (!db) {
-        // Fallback to local
         const updated = [...assessments.filter(a => !(a.month === entry.month && a.company === entry.company)), entry];
         setAssessments(updated);
         localStorage.setItem('fwd_assessments_local_cache', JSON.stringify(updated));
@@ -325,6 +321,11 @@ const App: React.FC = () => {
     return logisticsRecords.filter(r => r.isOverdue && !r.actualDeliveryDate);
   }, [logisticsRecords]);
 
+  const displayAuditRecords = useMemo(() => {
+    if (auditFilterFwd === 'ALL') return pastDueRecords;
+    return pastDueRecords.filter(r => r.forwarderName === auditFilterFwd);
+  }, [pastDueRecords, auditFilterFwd]);
+
   const pastDueSummary = useMemo(() => {
     const summary: { [key: string]: LogisticsRecord[] } = {};
     pastDueRecords.forEach(r => {
@@ -333,6 +334,39 @@ const App: React.FC = () => {
     });
     return Object.entries(summary).sort((a, b) => b[1].length - a[1].length);
   }, [pastDueRecords]);
+
+  const toggleAuditSelection = (id: string) => {
+    const next = new Set(selectedAuditIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedAuditIds(next);
+  };
+
+  const toggleSelectAllAudit = () => {
+    if (selectedAuditIds.size === displayAuditRecords.length) {
+      setSelectedAuditIds(new Set());
+    } else {
+      setSelectedAuditIds(new Set(displayAuditRecords.map(r => r.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    const count = selectedAuditIds.size;
+    if (confirm(t.batchDeleteConfirm.replace('{n}', count.toString()))) {
+      // Local state update
+      setLogisticsRecords(prev => prev.filter(r => !selectedAuditIds.has(r.id)));
+      setSelectedAuditIds(new Set());
+    }
+  };
+
+  const handleAuditDelete = (id: string) => {
+    if (confirm(t.deleteConfirm)) {
+      setLogisticsRecords(prev => prev.filter(r => r.id !== id));
+      const next = new Set(selectedAuditIds);
+      next.delete(id);
+      setSelectedAuditIds(next);
+    }
+  };
 
   const handleError = (e: any) => {
     console.error(e);
@@ -401,6 +435,7 @@ const App: React.FC = () => {
         const text = event.target?.result as string;
         const parsed = parseLogisticsCSV(text);
         setLogisticsRecords(parsed);
+        setSelectedAuditIds(new Set());
       };
       reader.readAsText(file);
     }
@@ -421,12 +456,6 @@ const App: React.FC = () => {
     setIsLoggedIn(false);
     localStorage.removeItem('corsair_admin_auth');
     setActiveTab('ASSESSMENT');
-  };
-
-  const handleAuditDelete = (id: string) => {
-    if (confirm(t.deleteConfirm)) {
-      setLogisticsRecords(prev => prev.filter(r => r.id !== id));
-    }
   };
 
   const handleAuditUpdateDate = (id: string, newDate: string) => {
@@ -454,11 +483,6 @@ const App: React.FC = () => {
     const fwds = new Set(pastDueRecords.map(r => r.forwarderName));
     return Array.from(fwds).sort();
   }, [pastDueRecords]);
-
-  const displayAuditRecords = useMemo(() => {
-    if (auditFilterFwd === 'ALL') return pastDueRecords;
-    return pastDueRecords.filter(r => r.forwarderName === auditFilterFwd);
-  }, [pastDueRecords, auditFilterFwd]);
 
   useEffect(() => {
     let base = 4.0;
@@ -548,33 +572,9 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button 
-                  onClick={handleExportAssessments}
-                  className="px-4 py-2 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl text-[9px] font-black uppercase hover:bg-slate-100 transition-all shadow-sm"
-                >
-                  <i className="fas fa-file-export mr-2"></i> {t.exportAssessment}
-                </button>
-                <button 
-                  onClick={() => {
-                    setEditingIndex(null);
-                    setNewEntry({
-                      month: availableMonths[0] || new Date().toISOString().substring(0, 7),
-                      company: '', frequency: 'High', completeness: 'Excellent', formatStandards: 'Compliant', emailResponse: '≤2 hours', evaluation: 'Excellent', score: 10, remarks: ''
-                    });
-                    setShowEntryModal(true);
-                  }}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase hover:bg-emerald-700 transition-all shadow-md"
-                >
-                  <i className="fas fa-plus mr-2"></i> {t.newAssessment}
-                </button>
-                <button 
-                  onClick={handleGenerateCollectiveEmail}
-                  disabled={isEmailLoading}
-                  className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase border border-indigo-100 hover:bg-indigo-100 transition-all"
-                >
-                  {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-mail-bulk mr-2"></i>}
-                  {t.genCollectiveEmail}
-                </button>
+                <button onClick={handleExportAssessments} className="px-4 py-2 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl text-[9px] font-black uppercase hover:bg-slate-100 transition-all shadow-sm"><i className="fas fa-file-export mr-2"></i> {t.exportAssessment}</button>
+                <button onClick={() => { setEditingIndex(null); setShowEntryModal(true); }} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[9px] font-black uppercase hover:bg-emerald-700 transition-all shadow-md"><i className="fas fa-plus mr-2"></i> {t.newAssessment}</button>
+                <button onClick={handleGenerateCollectiveEmail} disabled={isEmailLoading} className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase border border-indigo-100 hover:bg-indigo-100 transition-all">{isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-mail-bulk mr-2"></i>} {t.genCollectiveEmail}</button>
               </div>
             </div>
 
@@ -606,19 +606,11 @@ const App: React.FC = () => {
                     <i className="fas fa-wand-magic-sparkles"></i>
                   </h3>
                   {aiAnalysis ? (
-                    <div className="text-xs leading-relaxed text-indigo-100 whitespace-pre-wrap flex-1 overflow-y-auto max-h-[300px] bg-white/5 p-4 rounded-2xl border border-white/10 scrollbar-hide">
-                      {aiAnalysis}
-                    </div>
+                    <div className="text-xs leading-relaxed text-indigo-100 whitespace-pre-wrap flex-1 overflow-y-auto max-h-[300px] bg-white/5 p-4 rounded-2xl border border-white/10 scrollbar-hide">{aiAnalysis}</div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-center">
                        <p className="text-[10px] font-bold text-indigo-300 uppercase italic opacity-60">Ready to analyze performance</p>
-                       <button 
-                        onClick={generateAIInsight}
-                        disabled={isAiLoading}
-                        className="mt-6 px-8 py-3 bg-white text-indigo-900 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-indigo-50 transition-all disabled:opacity-50"
-                       >
-                         {isAiLoading ? <i className="fas fa-spinner animate-spin"></i> : t.genReport}
-                       </button>
+                       <button onClick={generateAIInsight} disabled={isAiLoading} className="mt-6 px-8 py-3 bg-white text-indigo-900 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-indigo-50 transition-all disabled:opacity-50">{isAiLoading ? <i className="fas fa-spinner animate-spin"></i> : t.genReport}</button>
                     </div>
                   )}
                 </div>
@@ -653,12 +645,7 @@ const App: React.FC = () => {
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
-                        <tr>
-                          <th className="px-8 py-6">{t.fwdName}</th>
-                          <th className="px-6 py-6 text-center">Metrics</th>
-                          <th className="px-6 py-6 text-center">{t.remarksLabel}</th>
-                          <th className="px-8 py-6 text-right">Score</th>
-                        </tr>
+                        <tr><th className="px-8 py-6">{t.fwdName}</th><th className="px-6 py-6 text-center">Metrics</th><th className="px-6 py-6 text-center">{t.remarksLabel}</th><th className="px-8 py-6 text-right">Score</th></tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {data.map((a, idx) => (
@@ -667,26 +654,17 @@ const App: React.FC = () => {
                                 <div className="font-bold text-slate-700">{a.company}</div>
                                 <div className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mt-1">{a.evaluation}</div>
                             </td>
-                            <td className="px-6 py-6">
-                                <div className="flex flex-wrap gap-1 justify-center max-w-[400px]">
-                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.frequency)}`}>FRQ: {a.frequency}</span>
-                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.completeness)}`}>CMP: {a.completeness}</span>
-                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.formatStandards)}`}>STD: {a.formatStandards}</span>
-                                    <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.emailResponse)}`}>SLA: {a.emailResponse}</span>
-                                </div>
+                            <td className="px-6 py-6 flex flex-wrap gap-1 justify-center max-w-[400px]">
+                                <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.frequency)}`}>FRQ: {a.frequency}</span>
+                                <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.completeness)}`}>CMP: {a.completeness}</span>
+                                <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.formatStandards)}`}>STD: {a.formatStandards}</span>
+                                <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase ${getTagStyle(a.emailResponse)}`}>SLA: {a.emailResponse}</span>
                             </td>
-                            <td className="px-6 py-6 text-xs text-slate-500 italic max-w-md truncate">
-                                {a.remarks || "-"}
-                            </td>
+                            <td className="px-6 py-6 text-xs text-slate-500 italic max-w-md truncate">{a.remarks || "-"}</td>
                             <td className="px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-4">
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => { 
-                                    setIsAddingNewFwd(false);
-                                    setEditingIndex({ month: a.month, company: a.company }); 
-                                    setNewEntry({...a}); 
-                                    setShowEntryModal(true); 
-                                  }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><i className="fas fa-pen-to-square text-xs"></i></button>
+                                  <button onClick={() => { setIsAddingNewFwd(false); setEditingIndex({ month: a.month, company: a.company }); setNewEntry({...a}); setShowEntryModal(true); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"><i className="fas fa-pen-to-square text-xs"></i></button>
                                   <button onClick={() => { if(confirm(t.deleteConfirm)) removeFromCloud(a.month, a.company); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"><i className="fas fa-trash-can text-xs"></i></button>
                                 </div>
                                 <span className={`font-black text-lg w-8 text-right ${a.score >= 9 ? 'text-emerald-600' : a.score < 7 ? 'text-rose-600' : 'text-indigo-600'}`}>{a.score}</span>
@@ -704,56 +682,34 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'AUDIT' && (
-          <div className="animate-in fade-in duration-500">
+          <div className="animate-in fade-in duration-500 relative">
             {!isLoggedIn ? (
               <div className="max-w-md mx-auto py-20 animate-in zoom-in duration-500">
                 <div className="bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-slate-200">
                   <div className="bg-indigo-600 px-10 py-12 text-center text-white">
-                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-2xl">
-                      <i className="fas fa-lock"></i>
-                    </div>
+                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6 text-2xl"><i className="fas fa-lock"></i></div>
                     <h2 className="text-2xl font-black uppercase tracking-tight italic">{t.adminLogin}</h2>
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mt-2 italic">Access 214 Data Processing Hub</p>
                   </div>
                   <form onSubmit={handleLogin} className="p-10 space-y-6">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.username}</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={loginForm.username}
-                        onChange={e => setLoginForm({...loginForm, username: e.target.value})}
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
-                      />
+                      <input type="text" required value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-500" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.password}</label>
-                      <input 
-                        type="password" 
-                        required
-                        value={loginForm.password}
-                        onChange={e => setLoginForm({...loginForm, password: e.target.value})}
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
-                      />
+                      <input type="password" required value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-indigo-500" />
                     </div>
-                    {loginError && (
-                      <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest text-center animate-bounce">
-                        <i className="fas fa-exclamation-circle mr-1"></i> {t.loginError}
-                      </div>
-                    )}
-                    <button type="submit" className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">
-                      {t.loginBtn}
-                    </button>
+                    {loginError && <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest text-center animate-bounce">{t.loginError}</div>}
+                    <button type="submit" className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 shadow-xl transition-all">{t.loginBtn}</button>
                   </form>
                 </div>
               </div>
             ) : (
-              <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-32">
                 {logisticsRecords.length === 0 ? (
                   <div className="bg-white p-20 rounded-[4rem] text-center border-2 border-dashed border-slate-200">
                       <i className="fas fa-file-csv text-4xl text-slate-200 mb-8"></i>
                       <h2 className="text-2xl font-black text-slate-400 uppercase italic">Audit Workspace</h2>
-                      <p className="text-slate-400 mt-4 max-w-md mx-auto">Logged in as Administrator. Upload the 214 master file (EDI/CSV) for processing.</p>
                       <label className="mt-10 inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[11px] cursor-pointer hover:bg-indigo-700 transition-all shadow-lg">
                         <i className="fas fa-cloud-upload-alt"></i> {t.importData}
                         <input type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
@@ -776,69 +732,68 @@ const App: React.FC = () => {
                                       <span className="text-[9px] font-black text-rose-300 uppercase italic leading-none">{t.shipmentsToExplain}</span>
                                    </div>
                                 </div>
-                                <button 
-                                  onClick={() => handleGenerateAggregatedEmail(fwdName, records)}
-                                  disabled={isEmailLoading}
-                                  className="mt-8 w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all disabled:opacity-50"
-                                >
-                                  {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-wand-magic-sparkles mr-2"></i>}
-                                  {t.genAggregatedEmail}
-                                </button>
+                                <button onClick={() => handleGenerateAggregatedEmail(fwdName, records)} disabled={isEmailLoading} className="mt-8 w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-[9px] font-black uppercase tracking-widest border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all disabled:opacity-50">{isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-wand-magic-sparkles mr-2"></i>} {t.genAggregatedEmail}</button>
                              </div>
                            ))}
                         </div>
                       </section>
 
-                      <section className="space-y-6">
+                      <section className="space-y-6 relative">
+                        {/* Batch Action Bar */}
+                        {selectedAuditIds.size > 0 && (
+                          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-xl border border-white/10 px-8 py-4 rounded-3xl flex items-center gap-8 shadow-2xl z-[100] animate-in slide-in-from-bottom-8 duration-500">
+                             <div className="flex items-center gap-3">
+                                <span className="w-8 h-8 bg-indigo-500 text-white rounded-full flex items-center justify-center text-[10px] font-black">{selectedAuditIds.size}</span>
+                                <span className="text-white text-[11px] font-black uppercase tracking-widest">{t.selectedCount.replace('{n}', selectedAuditIds.size.toString())}</span>
+                             </div>
+                             <div className="w-px h-6 bg-white/10"></div>
+                             <div className="flex gap-4">
+                                <button onClick={handleBatchDelete} className="px-6 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"><i className="fas fa-trash-can mr-2"></i> {t.deleteSelected}</button>
+                                <button onClick={() => setSelectedAuditIds(new Set())} className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Cancel</button>
+                             </div>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                           <div className="bg-rose-50 p-8 rounded-3xl border border-rose-100 shadow-sm col-span-1">
                             <div className="text-[10px] font-black uppercase text-rose-400 tracking-widest">{t.totalShipments}</div>
                             <div className="text-4xl font-black text-rose-600 mt-2 tracking-tighter">{pastDueRecords.length}</div>
                           </div>
-                          
                           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm col-span-2 flex items-center px-8">
                             <div className="flex flex-col flex-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{t.filterFwd}</label>
-                                <select 
-                                  value={auditFilterFwd} 
-                                  onChange={e => setAuditFilterFwd(e.target.value)}
-                                  className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500"
-                                >
+                                <select value={auditFilterFwd} onChange={e => { setAuditFilterFwd(e.target.value); setSelectedAuditIds(new Set()); }} className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500">
                                   <option value="ALL">{t.allFwd}</option>
                                   {auditFwdOptions.map(f => <option key={f} value={f}>{f}</option>)}
                                 </select>
                             </div>
                             {auditFilterFwd !== 'ALL' && (
-                              <button 
-                                  onClick={() => handleGenerateAggregatedEmail(auditFilterFwd, displayAuditRecords)}
-                                  disabled={isEmailLoading}
-                                  className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50"
-                              >
-                                {isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>}
-                                {t.genAggregatedEmail}
-                              </button>
+                              <button onClick={() => handleGenerateAggregatedEmail(auditFilterFwd, displayAuditRecords)} disabled={isEmailLoading} className="ml-6 px-6 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all disabled:opacity-50">{isEmailLoading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-magic mr-2"></i>} {t.genAggregatedEmail}</button>
                             )}
                           </div>
-
                           <div className="flex items-center justify-end">
-                            <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all">
-                              <i className="fas fa-trash-alt mr-2"></i> {t.clearData}
-                            </button>
+                            <button onClick={() => { setLogisticsRecords([]); setAuditFilterFwd('ALL'); setSelectedAuditIds(new Set()); }} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black uppercase text-[10px] hover:text-rose-500 transition-all"><i className="fas fa-trash-alt mr-2"></i> {t.clearData}</button>
                           </div>
                         </div>
 
                         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                           <div className="px-8 py-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-                            <h2 className="text-xl font-black uppercase italic tracking-tight">
-                              {auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}
-                            </h2>
-                            <span className="text-[10px] font-black text-slate-400 uppercase">Showing {displayAuditRecords.length} Shipments</span>
+                            <h2 className="text-xl font-black uppercase italic tracking-tight">{auditFilterFwd === 'ALL' ? t.allFwd : auditFilterFwd} - {t.auditSummary}</h2>
+                            <div className="flex items-center gap-6">
+                               <div className="flex items-center gap-2">
+                                  <input type="checkbox" checked={selectedAuditIds.size > 0 && selectedAuditIds.size === displayAuditRecords.length} onChange={toggleSelectAllAudit} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Select All filtered ({displayAuditRecords.length})</span>
+                               </div>
+                               <span className="w-px h-4 bg-slate-200"></span>
+                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Showing {displayAuditRecords.length} Shipments</span>
+                            </div>
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-left">
                               <thead className="bg-slate-50/30 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
                                 <tr>
-                                  <th className="px-8 py-6">FWD</th>
+                                  <th className="px-8 py-6 w-12"></th>
+                                  <th className="px-4 py-6">FWD</th>
                                   <th className="px-6 py-6">HAWB</th>
                                   <th className="px-6 py-6">Origin</th>
                                   <th className="px-6 py-6">Dest</th>
@@ -847,42 +802,28 @@ const App: React.FC = () => {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                {displayAuditRecords.slice(0, 200).map((r, idx) => (
-                                  <tr key={idx} className="hover:bg-rose-50/10 transition-colors bg-rose-50/5 group">
-                                    <td className="px-8 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
+                                {displayAuditRecords.slice(0, 500).map((r, idx) => (
+                                  <tr key={r.id} className={`hover:bg-indigo-50/30 transition-colors group ${selectedAuditIds.has(r.id) ? 'bg-indigo-50/50' : 'bg-rose-50/5'}`}>
+                                    <td className="px-8 py-6">
+                                       <input type="checkbox" checked={selectedAuditIds.has(r.id)} onChange={() => toggleAuditSelection(r.id)} className="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" />
+                                    </td>
+                                    <td className="px-4 py-6 font-bold text-slate-700 text-xs">{r.forwarderName}</td>
                                     <td className="px-6 py-6 font-mono text-xs">{r.hawb}</td>
                                     <td className="px-6 py-6 text-xs text-slate-500">{r.origin}</td>
                                     <td className="px-6 py-6 text-xs text-slate-500">{r.destination}</td>
                                     <td className="px-6 py-6 text-center text-xs font-bold text-rose-500">
                                       {editingAuditId === r.id ? (
                                         <div className="flex items-center gap-2">
-                                          <input 
-                                            type="date" 
-                                            value={tempEdd} 
-                                            onChange={e => setTempEdd(e.target.value)}
-                                            className="bg-white border border-rose-300 rounded px-2 py-1 text-[10px]" 
-                                          />
+                                          <input type="date" value={tempEdd} onChange={e => setTempEdd(e.target.value)} className="bg-white border border-rose-300 rounded px-2 py-1 text-[10px]" />
                                           <button onClick={() => handleAuditUpdateDate(r.id, tempEdd)} className="text-emerald-600 hover:text-emerald-700"><i className="fas fa-check"></i></button>
                                           <button onClick={() => setEditingAuditId(null)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
                                         </div>
-                                      ) : (
-                                        r.estimatedDeliveryDate
-                                      )}
+                                      ) : r.estimatedDeliveryDate}
                                     </td>
                                     <td className="px-6 py-6 text-center">
                                       <div className="flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button 
-                                          onClick={() => { setEditingAuditId(r.id); setTempEdd(r.estimatedDeliveryDate); }}
-                                          className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 text-slate-400 rounded-lg hover:text-indigo-600 hover:border-indigo-100 transition-all"
-                                        >
-                                          <i className="fas fa-pen text-[10px]"></i>
-                                        </button>
-                                        <button 
-                                          onClick={() => handleAuditDelete(r.id)}
-                                          className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 text-slate-400 rounded-lg hover:text-rose-600 hover:border-rose-100 transition-all"
-                                        >
-                                          <i className="fas fa-trash-can text-[10px]"></i>
-                                        </button>
+                                        <button onClick={() => { setEditingAuditId(r.id); setTempEdd(r.estimatedDeliveryDate); }} className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 text-slate-400 rounded-lg hover:text-indigo-600 hover:border-indigo-100 transition-all"><i className="fas fa-pen text-[10px]"></i></button>
+                                        <button onClick={() => handleAuditDelete(r.id)} className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 text-slate-400 rounded-lg hover:text-rose-600 hover:border-rose-100 transition-all"><i className="fas fa-trash-can text-[10px]"></i></button>
                                       </div>
                                     </td>
                                   </tr>
@@ -911,92 +852,29 @@ const App: React.FC = () => {
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.monthPeriod}</label>
                     <input type="month" disabled={!!editingIndex} value={newEntry.month} onChange={e => setNewEntry({...newEntry, month: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold" />
                  </div>
-                 
                  <div className="space-y-1 relative">
                     <div className="flex items-center justify-between mb-2">
                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.fwdName}</label>
-                       {!editingIndex && (
-                         <button 
-                          onClick={() => setIsAddingNewFwd(!isAddingNewFwd)}
-                          className="text-[9px] font-black text-indigo-600 uppercase hover:text-indigo-800"
-                         >
-                           {isAddingNewFwd ? "Select existing" : t.addNewFwd}
-                         </button>
-                       )}
+                       {!editingIndex && <button onClick={() => setIsAddingNewFwd(!isAddingNewFwd)} className="text-[9px] font-black text-indigo-600 uppercase hover:text-indigo-800">{isAddingNewFwd ? "Select existing" : t.addNewFwd}</button>}
                     </div>
-                    {isAddingNewFwd ? (
-                      <input 
-                        type="text" 
-                        placeholder="Type FWD Name..."
-                        value={customFwdName} 
-                        onChange={e => {
-                          setCustomFwdName(e.target.value);
-                          setNewEntry({...newEntry, company: e.target.value});
-                        }} 
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500" 
-                      />
-                    ) : (
-                      <select 
-                        disabled={!!editingIndex} 
-                        value={newEntry.company} 
-                        onChange={e => setNewEntry({...newEntry, company: e.target.value})} 
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500"
-                      >
-                         <option value="">{t.selectFwd}</option>
-                         {dynamicFwdList.map(f => <option key={f} value={f}>{f}</option>)}
-                      </select>
-                    )}
+                    {isAddingNewFwd ? <input type="text" placeholder="Type FWD Name..." value={customFwdName} onChange={e => { setCustomFwdName(e.target.value); setNewEntry({...newEntry, company: e.target.value}); }} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500" /> : <select disabled={!!editingIndex} value={newEntry.company} onChange={e => setNewEntry({...newEntry, company: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500"><option value="">{t.selectFwd}</option>{dynamicFwdList.map(f => <option key={f} value={f}>{f}</option>)}</select>}
                  </div>
-
-                 {[
-                    { key: 'frequency', opts: ['High', 'Medium', 'Low'] },
-                    { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] },
-                    { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] },
-                    { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }
-                 ].map(field => (
+                 {[{ key: 'frequency', opts: ['High', 'Medium', 'Low'] }, { key: 'completeness', opts: ['Excellent', 'Good', 'Fair'] }, { key: 'formatStandards', opts: ['Compliant', 'Basically Compliant', 'Fair'] }, { key: 'emailResponse', opts: ['≤2 hours', '≤4 hours', '>4 hours'] }].map(field => (
                     <div key={field.key} className="space-y-1">
                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{field.key.toUpperCase()}</label>
-                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">
-                          {field.opts.map(o => <option key={o} value={o}>{o}</option>)}
-                       </select>
+                       <select value={(newEntry as any)[field.key]} onChange={e => setNewEntry({...newEntry, [field.key]: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-3 text-sm font-bold">{field.opts.map(o => <option key={o} value={o}>{o}</option>)}</select>
                     </div>
                  ))}
-
                  <div className="col-span-2 space-y-1 mt-2">
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{t.remarksLabel}</label>
-                    <textarea 
-                        rows={3}
-                        value={newEntry.remarks}
-                        placeholder={t.remarksPlaceholder}
-                        onChange={e => setNewEntry({...newEntry, remarks: e.target.value})}
-                        className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500 resize-none"
-                    />
+                    <textarea rows={3} value={newEntry.remarks} placeholder={t.remarksPlaceholder} onChange={e => setNewEntry({...newEntry, remarks: e.target.value})} className="w-full bg-slate-50 border-none rounded-xl px-5 py-4 text-sm font-medium focus:ring-2 focus:ring-indigo-500 resize-none" />
                  </div>
               </div>
-
               <div className="mt-8 p-6 bg-indigo-50 rounded-2xl flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div>
-                  <div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div>
-                </div>
-                <div className="text-right">
-                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Rank</div>
-                   <div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>{newEntry.evaluation}</div>
-                </div>
+                <div><div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.scoreLabel}</div><div className="text-3xl font-black text-indigo-600 mt-1">{newEntry.score.toFixed(1)} / 10</div></div>
+                <div className="text-right"><div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Rank</div><div className={`text-xs font-black mt-1 uppercase tracking-widest ${newEntry.score >= 8 ? 'text-emerald-500' : 'text-rose-500'}`}>{newEntry.evaluation}</div></div>
               </div>
-
-              <button onClick={() => {
-                if (!newEntry.company) {
-                  alert("Please specify a Forwarder Name.");
-                  return;
-                }
-                saveToCloud(newEntry);
-                setShowEntryModal(false);
-                setEditingIndex(null);
-                setCustomFwdName('');
-              }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">
-                {editingIndex ? t.updateRecord : t.finalize}
-              </button>
+              <button onClick={() => { if (!newEntry.company) { alert("Please specify a Forwarder Name."); return; } saveToCloud(newEntry); setShowEntryModal(false); setEditingIndex(null); setCustomFwdName(''); }} className="w-full mt-10 py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.3em] text-[11px] hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100">{editingIndex ? t.updateRecord : t.finalize}</button>
            </div>
         </div>
       )}
@@ -1005,34 +883,21 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-indigo-600 text-white">
-                 <div>
-                    <h2 className="text-xl font-black uppercase italic tracking-tight">Draft Preview</h2>
-                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">Cloud Synchronized Data</p>
-                 </div>
+                 <div><h2 className="text-xl font-black uppercase italic tracking-tight">Draft Preview</h2><p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mt-1">Cloud Synchronized Data</p></div>
                  <button onClick={() => setShowEmailModal(false)} className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"><i className="fas fa-times text-xl"></i></button>
               </div>
               <div className="flex-1 overflow-y-auto p-10 bg-slate-50/50">
-                 <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-700 whitespace-pre-wrap font-serif">
-                    {collectiveEmail}
-                 </div>
+                 <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-sm leading-relaxed text-slate-700 whitespace-pre-wrap font-serif">{collectiveEmail}</div>
               </div>
               <div className="px-10 py-8 border-t border-slate-100 flex justify-end gap-4 bg-white">
-                 <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(collectiveEmail);
-                    alert(t.copySuccess);
-                  }}
-                  className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-                 >
-                   <i className="fas fa-copy mr-2"></i> Copy Content
-                 </button>
+                 <button onClick={() => { navigator.clipboard.writeText(collectiveEmail); alert(t.copySuccess); }} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"><i className="fas fa-copy mr-2"></i> Copy Content</button>
               </div>
            </div>
         </div>
       )}
 
       <footer className="py-20 text-center text-[10px] font-black uppercase text-slate-300 tracking-[1em] italic">
-        Corsair Data Intelligence v16.0 // Firestore Cloud Ready
+        Corsair Data Intelligence v17.0 // Batch Operations Enabled
       </footer>
     </div>
   );
