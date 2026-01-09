@@ -15,16 +15,16 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getFirestore, collection, setDoc, doc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 /**
- * 已根据你的截图更新配置信息
+ * 重要操作：
+ * 请将下方的配置替换为你从 Firebase 控制台获取的实际配置。
  */
 const firebaseConfig = {
-  apiKey: "AIzaSyAiPXaE4lknUGajzGaRi_qhA2RABZ4qIeM",
-  authDomain: "default-gemini-project-33363.firebaseapp.com",
-  projectId: "default-gemini-project-33363",
-  storageBucket: "default-gemini-project-33363.firebasestorage.app",
-  messagingSenderId: "116172860586",
-  appId: "1:116172860586:web:e71207eecfc87c5ccdf4d3",
-  measurementId: "G-X3XP0TFDHV"
+  apiKey: "请替换为你的API_KEY",
+  authDomain: "请替换为你的AUTH_DOMAIN",
+  projectId: "请替换为你的PROJECT_ID",
+  storageBucket: "请替换为你的STORAGE_BUCKET",
+  messagingSenderId: "请替换为你的SENDER_ID",
+  appId: "请替换为你的APP_ID"
 };
 
 const TRANSLATIONS = {
@@ -81,7 +81,7 @@ const TRANSLATIONS = {
     aiConfig: "AI Config Needed",
     exportAssessment: "Export Scores (CSV)",
     dbError: "Database Sync Error",
-    dbWait: "Connecting Cloud..."
+    dbWait: "Config Firebase First"
   },
   CN: {
     auditTitle: "214 审计中心",
@@ -136,7 +136,7 @@ const TRANSLATIONS = {
     aiConfig: "需要配置 AI",
     exportAssessment: "导出评分数据",
     dbError: "云端同步失败",
-    dbWait: "连接云端中..."
+    dbWait: "请先配置 Firebase"
   }
 };
 
@@ -187,10 +187,14 @@ const App: React.FC = () => {
   // Initialize Firestore
   const db = useMemo(() => {
     try {
+      if (firebaseConfig.apiKey.includes("请替换")) {
+          setDbStatus('OFFLINE');
+          return null;
+      }
       const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
       return getFirestore(app);
     } catch (e) {
-      console.warn("Firebase initialization failed", e);
+      console.warn("Firebase config invalid", e);
       setDbStatus('ERROR');
       return null;
     }
@@ -198,7 +202,11 @@ const App: React.FC = () => {
 
   // Fetch from Cloud on Mount
   useEffect(() => {
-    if (!db) return;
+    if (!db) {
+      const saved = localStorage.getItem('fwd_assessments_local_cache');
+      if (saved) setAssessments(JSON.parse(saved));
+      return;
+    }
 
     setDbStatus('SYNCING');
     const q = query(collection(db, "fwd_assessments"), orderBy("month", "desc"));
@@ -226,7 +234,13 @@ const App: React.FC = () => {
   const [customFwdName, setCustomFwdName] = useState('');
 
   const saveToCloud = async (entry: ForwarderAssessment) => {
-    if (!db) return;
+    if (!db) {
+        // Fallback to local
+        const updated = [...assessments.filter(a => !(a.month === entry.month && a.company === entry.company)), entry];
+        setAssessments(updated);
+        localStorage.setItem('fwd_assessments_local_cache', JSON.stringify(updated));
+        return;
+    };
     setDbStatus('SYNCING');
     try {
       const docId = `${entry.month}_${entry.company.replace(/\s+/g, '_')}`;
@@ -240,7 +254,12 @@ const App: React.FC = () => {
   };
 
   const removeFromCloud = async (month: string, company: string) => {
-    if (!db) return;
+    if (!db) {
+        const updated = assessments.filter(a => !(a.month === month && a.company === company));
+        setAssessments(updated);
+        localStorage.setItem('fwd_assessments_local_cache', JSON.stringify(updated));
+        return;
+    }
     setDbStatus('SYNCING');
     try {
       const docId = `${month}_${company.replace(/\s+/g, '_')}`;
@@ -259,7 +278,7 @@ const App: React.FC = () => {
       await window.aistudio.openSelectKey();
       setIsApiKeyActive(true);
     } else {
-      alert("System key selector not available.");
+      alert("System key selector not available. Please ensure you have set API_KEY in Vercel/Cloud Run Environment.");
     }
   };
 
@@ -318,7 +337,7 @@ const App: React.FC = () => {
   const handleError = (e: any) => {
     console.error(e);
     const msg = e.message || "Unknown error";
-    alert(`AI Service Error: ${msg}`);
+    alert(`AI Service Error: ${msg}\n\nPlease check your API_KEY.`);
   };
 
   const handleExportAssessments = () => {
@@ -470,9 +489,9 @@ const App: React.FC = () => {
               <h1 className="font-black text-xl uppercase italic leading-none tracking-tight">{t.auditTitle}</h1>
               <div className="flex items-center gap-3 mt-1">
                 <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${dbStatus === 'SYNCING' ? 'bg-amber-400 animate-pulse' : dbStatus === 'ERROR' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                  <span className={`w-2 h-2 rounded-full ${dbStatus === 'SYNCING' ? 'bg-amber-400 animate-pulse' : dbStatus === 'ERROR' ? 'bg-rose-500' : dbStatus === 'OFFLINE' ? 'bg-slate-300' : 'bg-emerald-500'}`}></span>
                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    {dbStatus === 'SYNCING' ? t.syncing : dbStatus === 'ERROR' ? t.dbError : t.synced}
+                    {dbStatus === 'SYNCING' ? t.syncing : dbStatus === 'ERROR' ? t.dbError : dbStatus === 'OFFLINE' ? t.dbWait : t.synced}
                   </span>
                 </div>
                 <div className="w-px h-2 bg-slate-200"></div>
@@ -512,6 +531,12 @@ const App: React.FC = () => {
       <main className="max-w-7xl mx-auto px-6 py-10 space-y-10">
         {activeTab === 'ASSESSMENT' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {dbStatus === 'OFFLINE' && (
+                <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-4 text-amber-700 text-[11px] font-bold">
+                    <i className="fas fa-info-circle text-lg text-amber-500"></i>
+                    <div>请在 <code>App.tsx</code> 中填入你的 Firebase 配置信息以开启云端同步功能。目前数据仅保存在本地。</div>
+                </div>
+            )}
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between overflow-x-auto">
               <div className="flex items-center gap-6">
                 <span className="text-[11px] font-black uppercase text-indigo-600 whitespace-nowrap">{t.filterByMonth}</span>
